@@ -145,21 +145,40 @@ impl EdgeDetector {
         mut receiver: tokio::sync::mpsc::UnboundedReceiver<capturer::MouseEvent>,
         sender: tokio::sync::mpsc::UnboundedSender<capturer::MouseEvent>,
     ) {
+        log::info!("EdgeDetector started, waiting for events...");
         while let Some(event) = receiver.recv().await {
+            log::debug!("EdgeDetector received event: {:?} at ({}, {})", event.event_type, event.x, event.y);
             if self.should_send_event(&event) {
+                log::info!("EdgeDetector forwarding event to network sender");
                 let _ = sender.send(event);
             }
         }
+        log::warn!("EdgeDetector stopped receiving events");
     }
     
     fn should_send_event(&self, event: &capturer::MouseEvent) -> bool {
         use crate::config::EdgeDirection;
         
-        match self.config.edge.sender_to_receiver {
-            EdgeDirection::Right => event.x >= (self.config.screen.width - 1) as f64,
+        let should_send = match self.config.edge.sender_to_receiver {
+            EdgeDirection::Right => {
+                // Test with much lower threshold to verify detection works
+                let threshold = 2500.0; // Test threshold
+                let result = event.x >= threshold;
+                if result {
+                    log::info!("Edge triggered! Mouse at x={}, threshold={}", event.x, threshold);
+                }
+                result
+            },
             EdgeDirection::Left => event.x <= 0.0,
             EdgeDirection::Top => event.y <= 0.0,
             EdgeDirection::Bottom => event.y >= (self.config.screen.height - 1) as f64,
+        };
+        
+        // Debug log for edge detection
+        if should_send {
+            log::info!("Sending event to remote: {:?} at ({}, {})", event.event_type, event.x, event.y);
         }
+        
+        should_send
     }
 }

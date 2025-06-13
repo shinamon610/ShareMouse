@@ -59,15 +59,25 @@ impl NetworkSender {
     
     pub async fn start(&self, mut receiver: mpsc::UnboundedReceiver<MouseEvent>) -> Result<()> {
         let remote_addr: SocketAddr = format!("{}:{}", self.config.remote_ip, self.config.remote_port).parse()?;
+        log::info!("NetworkSender starting, will send to {}", remote_addr);
         
         match self.config.protocol {
             Protocol::Udp => {
                 let socket = UdpSocket::bind("0.0.0.0:0").await?;
+                log::info!("UDP socket bound, waiting for events to send...");
                 
                 while let Some(event) = receiver.recv().await {
+                    log::info!("NetworkSender received event: {:?} at ({}, {})", event.event_type, event.x, event.y);
                     let net_event = NetworkMouseEvent::from(event);
                     let data = bincode::serialize(&net_event)?;
-                    socket.send_to(&data, remote_addr).await?;
+                    match socket.send_to(&data, remote_addr).await {
+                        Ok(bytes_sent) => {
+                            log::info!("Sent {} bytes to {}", bytes_sent, remote_addr);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to send to {}: {}", remote_addr, e);
+                        }
+                    }
                 }
             }
             Protocol::Tcp => {

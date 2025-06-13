@@ -45,18 +45,47 @@ pub mod macos {
     }
     
     impl MouseCapturer for MacOSCapturer {
-        async fn start_capture(&self, _sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
-            // Simplified implementation for now - would need proper event tap setup
+        async fn start_capture(&self, sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
+            use cocoa::appkit::NSEvent;
+            use cocoa::foundation::NSPoint;
+            use cocoa::base::nil;
+            
             self.is_running.store(true, Ordering::SeqCst);
             
-            // TODO: Implement proper CGEventTap setup
-            loop {
-                if !self.is_running.load(Ordering::SeqCst) {
-                    break;
+            let mut last_position = NSPoint::new(f64::NAN, f64::NAN); // Invalid initial position
+            
+            log::info!("Starting macOS mouse capture with polling");
+            
+            // Simple polling approach for testing
+            while self.is_running.load(Ordering::SeqCst) {
+                unsafe {
+                    let current_position = NSEvent::mouseLocation(nil);
+                    
+                    // Only send events when mouse position changes
+                    if current_position.x != last_position.x || current_position.y != last_position.y {
+                        if !last_position.x.is_nan() && !last_position.y.is_nan() {
+                            log::debug!("Mouse moved to ({}, {})", current_position.x, current_position.y);
+                            
+                            let mouse_event = MouseEvent {
+                                x: current_position.x,
+                                y: current_position.y,
+                                event_type: MouseEventType::Move,
+                            };
+                            
+                            if let Err(_) = sender.send(mouse_event) {
+                                log::error!("Failed to send mouse event");
+                                break;
+                            }
+                        }
+                        
+                        last_position = current_position;
+                    }
                 }
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                
+                tokio::time::sleep(tokio::time::Duration::from_millis(16)).await; // ~60fps
             }
             
+            log::info!("Mouse capture stopped");
             Ok(())
         }
         
