@@ -3,8 +3,25 @@ MouseShare ツール仕様書（Rust実装）
 1. システム概要
 
 目的: macOS と Linux（Wayland/Hyprland + NixOS）間でマウス操作を共有
+ユーザー体験: 2つの物理画面を1つの大きな仮想画面として操作できる
 
-特徴: 軽量・ローカルLAN専用・CLI + 設定ファイルベース
+特徴: 軽量・ローカルLAN専用・CLI + 設定ファイルベース・シームレスなマルチモニター体験
+
+## 重要な設計原則
+
+### マルチモニター統合体験
+- ユーザーからは「大きな1枚の画面」として認識される
+- macOS(2600x1440) + Linux(1920x1080) = 仮想画面(4520x1440)
+- マウス位置は仮想座標系で管理し、各システムのローカル座標に変換
+
+### 相互排他制御
+- 片方の画面でマウス操作中は、もう片方の物理マウスは無効化
+- エッジ越え時のみ制御権が移譲される
+- 制御権を持つ側のみがマウスイベントをキャプチャ・送信
+
+### 座標変換ロジック
+- 送信側: ローカル座標 → 仮想座標 → ネットワーク送信
+- 受信側: ネットワーク受信 → 仮想座標 → ローカル座標 → マウス注入
 
 2. 開発言語・主要技術
 
@@ -44,13 +61,28 @@ mode: sender                # sender or receiver
 remote_ip: 192.168.0.42     # 相手側IP
 remote_port: 5000           # ポート
 screen:
-  width: 2560
+  width: 2560               # 自分の画面解像度
   height: 1440
+remote_screen:
+  width: 1920               # 相手の画面解像度  
+  height: 1080
+layout:
+  position: left            # 仮想画面での自分の位置（left/right/top/bottom）
+  remote_position: right    # 仮想画面での相手の位置
 edge:
-  sender_to_receiver: right  # left/right/top/bottom
-  receiver_to_sender: left
+  sender_to_receiver: right # 制御権移譲する方向
+  receiver_to_sender: left  # 制御権を戻す方向
 protocol: udp               # udp or tcp
 buffer_size: 4096
+
+## 仮想画面レイアウト例
+macOS(sender, position=left) + Linux(receiver, position=right)
+┌─────────────────┬─────────────────┐
+│   macOS 2600px  │  Linux 1920px   │
+│     1440px      │    1080px       │
+│    (0,0)-(2599,1439) │ (2600,0)-(4519,1079) │
+└─────────────────┴─────────────────┘
+仮想座標: (0,0) - (4519,1439)
 
 6. ネットワーク
 
