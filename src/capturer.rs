@@ -33,6 +33,7 @@ pub mod macos {
     use super::*;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use hidapi::HidApi;
     
     pub struct MacOSCapturer {
         is_running: Arc<AtomicBool>,
@@ -44,53 +45,79 @@ pub mod macos {
                 is_running: Arc::new(AtomicBool::new(false)),
             }
         }
+        
+        fn find_mouse_device(api: &HidApi) -> Option<hidapi::HidDevice> {
+            // HIDマウスデバイスを検索（Usage Page: 0x01, Usage: 0x02）
+            for device_info in api.device_list() {
+                if device_info.usage_page() == 0x01 && device_info.usage() == 0x02 {
+                    log::info!("Found mouse device: {:04x}:{:04x} - {}", 
+                              device_info.vendor_id(), device_info.product_id(),
+                              device_info.product_string().unwrap_or("Unknown"));
+                    
+                    if let Ok(device) = device_info.open_device(api) {
+                        return Some(device);
+                    }
+                }
+            }
+            None
+        }
     }
     
     impl MouseCapturer for MacOSCapturer {
         async fn start_capture(&self, sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
-            use cocoa::appkit::NSEvent;
-            use cocoa::foundation::NSPoint;
-            use cocoa::base::nil;
-            
             self.is_running.store(true, Ordering::SeqCst);
             
-            let mut last_position = NSPoint::new(f64::NAN, f64::NAN); // Invalid initial position
+            log::info!("Starting macOS mouse capture with HID API");
             
-            log::info!("Starting macOS mouse capture with polling");
+            let api = HidApi::new()?;
+            let device = Self::find_mouse_device(&api)
+                .ok_or_else(|| anyhow::anyhow!("No mouse device found"))?;
             
-            // Simple polling approach for testing
+            device.set_blocking_mode(false)?;
+            
+            let mut virtual_x = 0.0f64;
+            let mut virtual_y = 0.0f64;
+            
             while self.is_running.load(Ordering::SeqCst) {
-                unsafe {
-                    let current_position = NSEvent::mouseLocation(nil);
-                    
-                    // Only send events when mouse position changes
-                    if current_position.x != last_position.x || current_position.y != last_position.y {
-                        if !last_position.x.is_nan() && !last_position.y.is_nan() {
-                            let delta_x = current_position.x - last_position.x;
-                            let delta_y = current_position.y - last_position.y;
+                let mut buf = [0u8; 64];
+                match device.read(&mut buf) {
+                    Ok(size) if size > 0 => {
+                        // 標準的なマウスHIDレポート: [buttons, delta_x, delta_y, wheel]
+                        if size >= 3 {
+                            let delta_x = buf[1] as i8 as f64;
+                            let delta_y = buf[2] as i8 as f64;
                             
-                            log::debug!("Mouse moved to ({}, {}), delta: ({}, {})", 
-                                       current_position.x, current_position.y, delta_x, delta_y);
-                            
-                            let mouse_event = MouseEvent {
-                                x: current_position.x,
-                                y: current_position.y,
-                                delta_x: Some(delta_x),
-                                delta_y: Some(delta_y),
-                                event_type: MouseEventType::Move,
-                            };
-                            
-                            if let Err(_) = sender.send(mouse_event) {
-                                log::error!("Failed to send mouse event");
-                                break;
+                            if delta_x != 0.0 || delta_y != 0.0 {
+                                virtual_x += delta_x;
+                                virtual_y += delta_y;
+                                
+                                log::debug!("HID mouse delta: ({}, {}), virtual: ({}, {})", 
+                                           delta_x, delta_y, virtual_x, virtual_y);
+                                
+                                let mouse_event = MouseEvent {
+                                    x: virtual_x,
+                                    y: virtual_y,
+                                    delta_x: Some(delta_x),
+                                    delta_y: Some(delta_y),
+                                    event_type: MouseEventType::Move,
+                                };
+                                
+                                if sender.send(mouse_event).is_err() {
+                                    log::error!("Failed to send mouse event");
+                                    break;
+                                }
                             }
                         }
-                        
-                        last_position = current_position;
+                    }
+                    Ok(_) => {
+                        // データなし、少し待つ
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+                    }
+                    Err(e) => {
+                        log::warn!("HID read error: {}", e);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     }
                 }
-                
-                tokio::time::sleep(tokio::time::Duration::from_millis(16)).await; // ~60fps
             }
             
             log::info!("Mouse capture stopped");
