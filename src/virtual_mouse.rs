@@ -38,7 +38,7 @@ impl VirtualMouse {
     }
     
     /// 物理マウス位置から仮想座標を更新（Local制御時）
-    pub fn update_from_physical(&mut self, physical_pos: LocalCoordinate, transformer: &CoordinateTransformer) {
+    pub fn update_from_physical(&mut self, physical_pos: LocalCoordinate, delta: Option<(f64, f64)>, transformer: &CoordinateTransformer) {
         match self.control_side {
             ControlSide::Local => {
                 // Local側制御時：物理位置を仮想座標に変換
@@ -48,32 +48,23 @@ impl VirtualMouse {
                 self.last_physical_position = Some(physical_pos);
             }
             ControlSide::Remote => {
-                // Remote側制御時：移動量のみを仮想座標に加算
-                if let Some(last_pos) = &self.last_physical_position {
-                    let delta_x = physical_pos.x - last_pos.x;
-                    let delta_y = physical_pos.y - last_pos.y;
-                    
-                    log::debug!("Remote control: physical ({}, {}) -> last ({}, {}) -> delta ({}, {})", 
-                               physical_pos.x, physical_pos.y, last_pos.x, last_pos.y, delta_x, delta_y);
+                // Remote側制御時：OSの生の移動量をそのまま仮想座標に適用
+                if let Some((delta_x, delta_y)) = delta {
+                    log::debug!("Remote control: using OS delta ({}, {})", delta_x, delta_y);
                     
                     let old_virtual = self.virtual_position.clone();
                     self.virtual_position.x += delta_x;
                     self.virtual_position.y += delta_y;
                     
-                    log::debug!("Remote control: virtual before bounds ({}, {}) -> after delta ({}, {})", 
-                               old_virtual.x, old_virtual.y, self.virtual_position.x, self.virtual_position.y);
-                    
                     // 仮想画面境界内に制限
                     let (virtual_width, virtual_height) = transformer.get_virtual_screen_size();
-                    let before_clamp = self.virtual_position.clone();
                     self.virtual_position.x = self.virtual_position.x.max(0.0).min(virtual_width as f64 - 1.0);
                     self.virtual_position.y = self.virtual_position.y.max(0.0).min(virtual_height as f64 - 1.0);
                     
-                    log::debug!("Remote control: virtual bounds check ({}, {}) -> final ({}, {}), screen size: {}x{}", 
-                               before_clamp.x, before_clamp.y, self.virtual_position.x, self.virtual_position.y,
-                               virtual_width, virtual_height);
+                    log::debug!("Remote control: virtual ({}, {}) -> ({}, {})", 
+                               old_virtual.x, old_virtual.y, self.virtual_position.x, self.virtual_position.y);
                 } else {
-                    log::warn!("Remote control but no last_physical_position available");
+                    log::warn!("Remote control but no delta information available");
                 }
                 self.last_physical_position = Some(physical_pos);
             }
@@ -191,6 +182,8 @@ impl VirtualMouse {
             Some(MouseEvent {
                 x: remote_coord.x,
                 y: remote_coord.y,
+                delta_x: None,
+                delta_y: None,
                 event_type: MouseEventType::Move,
             })
         } else {

@@ -5,6 +5,8 @@ use tokio::sync::mpsc;
 pub struct MouseEvent {
     pub x: f64,
     pub y: f64,
+    pub delta_x: Option<f64>,  // 相対移動量
+    pub delta_y: Option<f64>,  // 相対移動量
     pub event_type: MouseEventType,
 }
 
@@ -64,11 +66,17 @@ pub mod macos {
                     // Only send events when mouse position changes
                     if current_position.x != last_position.x || current_position.y != last_position.y {
                         if !last_position.x.is_nan() && !last_position.y.is_nan() {
-                            log::debug!("Mouse moved to ({}, {})", current_position.x, current_position.y);
+                            let delta_x = current_position.x - last_position.x;
+                            let delta_y = current_position.y - last_position.y;
+                            
+                            log::debug!("Mouse moved to ({}, {}), delta: ({}, {})", 
+                                       current_position.x, current_position.y, delta_x, delta_y);
                             
                             let mouse_event = MouseEvent {
                                 x: current_position.x,
                                 y: current_position.y,
+                                delta_x: Some(delta_x),
+                                delta_y: Some(delta_y),
                                 event_type: MouseEventType::Move,
                             };
                             

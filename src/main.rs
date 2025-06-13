@@ -165,9 +165,14 @@ impl VirtualMouseProcessor {
             let mut vm = self.virtual_mouse.lock().unwrap();
             
             let physical_coord = coordinate::LocalCoordinate::from(physical_event.clone());
+            let delta = if let (Some(dx), Some(dy)) = (physical_event.delta_x, physical_event.delta_y) {
+                Some((dx, dy))
+            } else {
+                None
+            };
             
             // 1. 現在の制御状態に応じて座標更新
-            vm.update_from_physical(physical_coord.clone(), &self.transformer);
+            vm.update_from_physical(physical_coord.clone(), delta, &self.transformer);
             
             // 2. 制御領域を再判定（座標更新後）
             let should_control_side = vm.determine_control_side(&self.transformer, &physical_coord);
@@ -192,6 +197,8 @@ impl VirtualMouseProcessor {
                     let network_event = capturer::MouseEvent {
                         x: remote_coord.x,
                         y: remote_coord.y,
+                        delta_x: physical_event.delta_x,
+                        delta_y: physical_event.delta_y,
                         event_type: physical_event.event_type.clone(),
                     };
                     log::info!("Sending to remote: ({}, {}) [virtual: ({}, {})]", 
