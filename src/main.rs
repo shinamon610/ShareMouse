@@ -83,7 +83,7 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     let capturer = capturer::macos::MacOSCapturer::new();
     
     #[cfg(target_os = "linux")]
-    let capturer = capturer::linux::LinuxCapturer::new("/dev/input/event0");
+    let capturer = capturer::linux::LinuxCapturer::new("/dev/input/event0", config.screen.width, config.screen.height);
     
     let edge_detector = EdgeDetector::new(config.clone());
     let network_sender = network::NetworkSender::new(config.clone());
@@ -109,10 +109,10 @@ async fn start_receiver(config: config::Config) -> anyhow::Result<()> {
     let (network_tx, mut network_rx) = mpsc::unbounded_channel();
     
     #[cfg(target_os = "macos")]
-    let injector = injector::macos::MacOSInjector::new()?;
+    let mut injector = injector::macos::MacOSInjector::new()?;
     
     #[cfg(target_os = "linux")]
-    let injector = injector::linux::LinuxInjector::new()?;
+    let mut injector = injector::linux::LinuxInjector::new()?;
     
     let network_receiver = network::NetworkReceiver::new(config.clone());
     

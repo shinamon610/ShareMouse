@@ -106,11 +106,16 @@ impl NetworkReceiver {
                 let socket = UdpSocket::bind(bind_addr).await?;
                 let mut buf = vec![0u8; self.config.buffer_size];
                 
+                log::info!("UDP receiver listening on {}", bind_addr);
                 loop {
-                    let (len, _addr) = socket.recv_from(&mut buf).await?;
+                    let (len, addr) = socket.recv_from(&mut buf).await?;
+                    log::debug!("Received {} bytes from {}", len, addr);
                     if let Ok(net_event) = bincode::deserialize::<NetworkMouseEvent>(&buf[..len]) {
+                        log::debug!("Parsed event: {:?}", net_event);
                         let event = MouseEvent::from(net_event);
                         let _ = sender.send(event);
+                    } else {
+                        log::warn!("Failed to deserialize network event");
                     }
                 }
             }

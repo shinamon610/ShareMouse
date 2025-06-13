@@ -76,14 +76,18 @@ pub mod linux {
         device_path: String,
         current_x: f64,
         current_y: f64,
+        screen_width: f64,
+        screen_height: f64,
     }
     
     impl LinuxCapturer {
-        pub fn new(device_path: &str) -> Self {
+        pub fn new(device_path: &str, screen_width: u32, screen_height: u32) -> Self {
             Self {
                 device_path: device_path.to_string(),
                 current_x: 0.0,
                 current_y: 0.0,
+                screen_width: screen_width as f64,
+                screen_height: screen_height as f64,
             }
         }
     }
@@ -102,22 +106,24 @@ pub mod linux {
                             match axis {
                                 RelativeAxisType::REL_X => {
                                     current_x += event.value() as f64;
-                                    current_x = current_x.max(0.0);
+                                    current_x = current_x.max(0.0).min(self.screen_width - 1.0);
                                     let mouse_event = MouseEvent {
                                         x: current_x,
                                         y: current_y,
                                         event_type: MouseEventType::Move,
                                     };
+                                    log::debug!("Mouse X: {}, Y: {}", current_x, current_y);
                                     let _ = sender.send(mouse_event);
                                 }
                                 RelativeAxisType::REL_Y => {
                                     current_y += event.value() as f64;
-                                    current_y = current_y.max(0.0);
+                                    current_y = current_y.max(0.0).min(self.screen_height - 1.0);
                                     let mouse_event = MouseEvent {
                                         x: current_x,
                                         y: current_y,
                                         event_type: MouseEventType::Move,
                                     };
+                                    log::debug!("Mouse X: {}, Y: {}", current_x, current_y);
                                     let _ = sender.send(mouse_event);
                                 }
                                 RelativeAxisType::REL_WHEEL => {

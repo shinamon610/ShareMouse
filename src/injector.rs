@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::capturer::MouseEvent;
 
 pub trait MouseInjector {
-    fn inject_event(&self, event: MouseEvent) -> Result<()>;
+    fn inject_event(&mut self, event: MouseEvent) -> Result<()>;
 }
 
 #[cfg(target_os = "macos")]
@@ -26,7 +26,7 @@ pub mod macos {
     }
     
     impl MouseInjector for MacOSInjector {
-        fn inject_event(&self, event: MouseEvent) -> Result<()> {
+        fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
             let location = CGPoint::new(event.x, event.y);
             
             let cg_event = match event.event_type {
@@ -135,34 +135,48 @@ pub mod linux {
     }
     
     impl MouseInjector for LinuxInjector {
-        fn inject_event(&self, event: MouseEvent) -> Result<()> {
+        fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
+            use uinput::event::controller::{Controller, Mouse};
+            
+            log::debug!("Injecting event: {:?} at ({}, {})", event.event_type, event.x, event.y);
+            
             match event.event_type {
                 MouseEventType::Move => {
-                    // TODO: Implement relative movement for Linux
+                    // For absolute positioning, we need to use ABS events
+                    // This is a simplified implementation - proper absolute positioning requires more setup
+                    log::debug!("Moving mouse to ({}, {})", event.x, event.y);
                 }
                 MouseEventType::LeftClick => {
-                    // TODO: Implement left click for Linux
+                    self.device.click(&Controller::Mouse(Mouse::Left))?;
+                    self.device.synchronize()?;
                 }
                 MouseEventType::LeftRelease => {
-                    // TODO: Implement left release for Linux
+                    self.device.release(&Controller::Mouse(Mouse::Left))?;
+                    self.device.synchronize()?;
                 }
                 MouseEventType::RightClick => {
-                    // TODO: Implement right click for Linux
+                    self.device.click(&Controller::Mouse(Mouse::Right))?;
+                    self.device.synchronize()?;
                 }
                 MouseEventType::RightRelease => {
-                    // TODO: Implement right release for Linux
+                    self.device.release(&Controller::Mouse(Mouse::Right))?;
+                    self.device.synchronize()?;
                 }
                 MouseEventType::MiddleClick => {
-                    // TODO: Implement middle click for Linux
+                    self.device.click(&Controller::Mouse(Mouse::Middle))?;
+                    self.device.synchronize()?;
                 }
                 MouseEventType::MiddleRelease => {
-                    // TODO: Implement middle release for Linux
+                    self.device.release(&Controller::Mouse(Mouse::Middle))?;
+                    self.device.synchronize()?;
                 }
                 MouseEventType::ScrollUp => {
-                    // TODO: Implement scroll up for Linux
+                    // Scroll events need different handling in uinput
+                    log::debug!("Scroll up event");
                 }
                 MouseEventType::ScrollDown => {
-                    // TODO: Implement scroll down for Linux
+                    // Scroll events need different handling in uinput  
+                    log::debug!("Scroll down event");
                 }
             }
             
