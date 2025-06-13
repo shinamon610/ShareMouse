@@ -10,6 +10,8 @@ use std::net::SocketAddr;
 pub struct NetworkMouseEvent {
     pub x: f64,
     pub y: f64,
+    pub delta_x: Option<f64>,
+    pub delta_y: Option<f64>,
     pub event_type: String,
 }
 
@@ -18,6 +20,8 @@ impl From<MouseEvent> for NetworkMouseEvent {
         Self {
             x: event.x,
             y: event.y,
+            delta_x: event.delta_x,
+            delta_y: event.delta_y,
             event_type: format!("{:?}", event.event_type),
         }
     }
@@ -43,6 +47,8 @@ impl From<NetworkMouseEvent> for MouseEvent {
         Self {
             x: net_event.x,
             y: net_event.y,
+            delta_x: net_event.delta_x,
+            delta_y: net_event.delta_y,
             event_type,
         }
     }
