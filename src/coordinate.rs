@@ -14,7 +14,7 @@ pub struct LocalCoordinate {
 }
 
 pub struct CoordinateTransformer {
-    config: Config,
+    pub config: Config,
 }
 
 impl CoordinateTransformer {

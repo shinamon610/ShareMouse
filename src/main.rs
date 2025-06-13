@@ -9,6 +9,7 @@ mod capturer;
 mod injector;
 mod network;
 mod coordinate;
+mod virtual_mouse;
 
 #[derive(Parser)]
 #[command(name = "sharemouse")]
@@ -76,9 +77,14 @@ async fn start_service(config: config::Config) -> anyhow::Result<()> {
 
 async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     use tokio::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    use virtual_mouse::{VirtualMouse, SharedVirtualMouse};
+    use coordinate::CoordinateTransformer;
     
     let (capture_tx, capture_rx) = mpsc::unbounded_channel();
     let (network_tx, network_rx) = mpsc::unbounded_channel();
+    // 仮想マウス状態を初期化
+    let virtual_mouse: SharedVirtualMouse = Arc::new(Mutex::new(VirtualMouse::new(&config)));
     
     #[cfg(target_os = "macos")]
     let capturer = capturer::macos::MacOSCapturer::new();
@@ -86,19 +92,23 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     let capturer = capturer::linux::LinuxCapturer::new("/dev/input/event0", config.screen.width, config.screen.height);
     
-    let edge_detector = EdgeDetector::new(config.clone());
+    let virtual_mouse_processor = VirtualMouseProcessor::new(config.clone(), virtual_mouse.clone());
     let network_sender = network::NetworkSender::new(config.clone());
     
+    // 物理マウスキャプチャ
     tokio::spawn(async move {
         if let Err(e) = capturer.start_capture(capture_tx).await {
             error!("Capture error: {}", e);
         }
     });
     
+    // 仮想マウス処理（物理マウス → 仮想座標更新 → 制御判定）
+    // 注入は別スレッドでなく同期処理で行う
     tokio::spawn(async move {
-        edge_detector.process_events(capture_rx, network_tx).await;
+        virtual_mouse_processor.process_events(capture_rx, network_tx).await;
     });
     
+    // ネットワーク送信
     network_sender.start(network_rx).await?;
     
     Ok(())
@@ -132,67 +142,64 @@ async fn start_receiver(config: config::Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-struct EdgeDetector {
+struct VirtualMouseProcessor {
     config: config::Config,
+    virtual_mouse: virtual_mouse::SharedVirtualMouse,
+    transformer: coordinate::CoordinateTransformer,
 }
 
-impl EdgeDetector {
-    fn new(config: config::Config) -> Self {
-        Self { config }
+impl VirtualMouseProcessor {
+    fn new(config: config::Config, virtual_mouse: virtual_mouse::SharedVirtualMouse) -> Self {
+        let transformer = coordinate::CoordinateTransformer::new(config.clone());
+        Self { config, virtual_mouse, transformer }
     }
     
     async fn process_events(
         &self,
-        mut receiver: tokio::sync::mpsc::UnboundedReceiver<capturer::MouseEvent>,
-        sender: tokio::sync::mpsc::UnboundedSender<capturer::MouseEvent>,
+        mut capture_rx: tokio::sync::mpsc::UnboundedReceiver<capturer::MouseEvent>,
+        network_tx: tokio::sync::mpsc::UnboundedSender<capturer::MouseEvent>,
     ) {
-        log::info!("EdgeDetector started, waiting for events...");
-        while let Some(event) = receiver.recv().await {
-            log::debug!("EdgeDetector received event: {:?} at ({}, {})", event.event_type, event.x, event.y);
-            if self.should_send_event(&event) {
-                log::info!("EdgeDetector forwarding event to network sender");
+        log::info!("VirtualMouseProcessor started, waiting for events...");
+        
+        while let Some(physical_event) = capture_rx.recv().await {
+            let mut vm = self.virtual_mouse.lock().unwrap();
+            
+            // 1. 物理マウス位置から仮想座標を更新
+            let physical_coord = coordinate::LocalCoordinate::from(physical_event.clone());
+            vm.update_from_physical(physical_coord, &self.transformer);
+            
+            // 2. 現在の制御領域を判定
+            let should_control_side = vm.determine_control_side(&self.transformer);
+            let control_changed = vm.control_side != should_control_side;
+            
+            if control_changed {
+                vm.switch_control(should_control_side);
                 
-                // 座標変換：相手側での適切なマウス位置を計算
-                let transformed_event = self.transform_event_for_remote(&event);
-                log::info!("Transformed coordinates: ({}, {}) -> ({}, {})", 
-                          event.x, event.y, transformed_event.x, transformed_event.y);
-                
-                let _ = sender.send(transformed_event);
+                // 制御権移譲時：相手側に初期位置を送信
+                if let Some(transfer_event) = vm.create_transfer_event(&self.transformer) {
+                    log::info!("Control transfer: sending initial position ({}, {}) to remote", 
+                              transfer_event.x, transfer_event.y);
+                    let _ = network_tx.send(transfer_event);
+                }
             }
+            
+            // 3. Remote制御時のみネットワーク送信
+            if let virtual_mouse::ControlSide::Remote = vm.control_side {
+                if let Some(remote_coord) = vm.get_remote_coordinate(&self.transformer) {
+                    let network_event = capturer::MouseEvent {
+                        x: remote_coord.x,
+                        y: remote_coord.y,
+                        event_type: physical_event.event_type.clone(),
+                    };
+                    log::debug!("Sending to remote: ({}, {})", network_event.x, network_event.y);
+                    let _ = network_tx.send(network_event);
+                }
+            }
+            
+            log::debug!("Virtual position: ({}, {}), Control: {:?}", 
+                       vm.virtual_position.x, vm.virtual_position.y, vm.control_side);
         }
-        log::warn!("EdgeDetector stopped receiving events");
-    }
-    
-    fn should_send_event(&self, event: &capturer::MouseEvent) -> bool {
-        use crate::coordinate::{CoordinateTransformer, LocalCoordinate};
         
-        let transformer = CoordinateTransformer::new(self.config.clone());
-        let local_coord = LocalCoordinate::from(event.clone());
-        
-        let should_send = transformer.is_at_transfer_edge(&local_coord);
-        
-        // Debug log for edge detection
-        if should_send {
-            log::info!("Edge triggered! Mouse at ({}, {}) - transferring control", event.x, event.y);
-            log::info!("Sending event to remote: {:?} at ({}, {})", event.event_type, event.x, event.y);
-        }
-        
-        should_send
-    }
-    
-    fn transform_event_for_remote(&self, event: &capturer::MouseEvent) -> capturer::MouseEvent {
-        use crate::coordinate::{CoordinateTransformer, LocalCoordinate};
-        
-        let transformer = CoordinateTransformer::new(self.config.clone());
-        let local_coord = LocalCoordinate::from(event.clone());
-        
-        // エッジ移行時の相手側マウス位置を計算
-        let remote_coord = transformer.calculate_remote_entry_position(&local_coord);
-        
-        capturer::MouseEvent {
-            x: remote_coord.x,
-            y: remote_coord.y,
-            event_type: event.event_type.clone(),
-        }
+        log::warn!("VirtualMouseProcessor stopped receiving events");
     }
 }
