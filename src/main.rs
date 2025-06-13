@@ -151,7 +151,13 @@ impl EdgeDetector {
             log::debug!("EdgeDetector received event: {:?} at ({}, {})", event.event_type, event.x, event.y);
             if self.should_send_event(&event) {
                 log::info!("EdgeDetector forwarding event to network sender");
-                let _ = sender.send(event);
+                
+                // 座標変換：相手側での適切なマウス位置を計算
+                let transformed_event = self.transform_event_for_remote(&event);
+                log::info!("Transformed coordinates: ({}, {}) -> ({}, {})", 
+                          event.x, event.y, transformed_event.x, transformed_event.y);
+                
+                let _ = sender.send(transformed_event);
             }
         }
         log::warn!("EdgeDetector stopped receiving events");
@@ -172,5 +178,21 @@ impl EdgeDetector {
         }
         
         should_send
+    }
+    
+    fn transform_event_for_remote(&self, event: &capturer::MouseEvent) -> capturer::MouseEvent {
+        use crate::coordinate::{CoordinateTransformer, LocalCoordinate};
+        
+        let transformer = CoordinateTransformer::new(self.config.clone());
+        let local_coord = LocalCoordinate::from(event.clone());
+        
+        // エッジ移行時の相手側マウス位置を計算
+        let remote_coord = transformer.calculate_remote_entry_position(&local_coord);
+        
+        capturer::MouseEvent {
+            x: remote_coord.x,
+            y: remote_coord.y,
+            event_type: event.event_type.clone(),
+        }
     }
 }
