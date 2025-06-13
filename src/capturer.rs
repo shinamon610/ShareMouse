@@ -147,6 +147,8 @@ pub mod linux {
                                     let mouse_event = MouseEvent {
                                         x: current_x,
                                         y: current_y,
+                                        delta_x: Some(event.value() as f64),
+                                        delta_y: Some(0.0),
                                         event_type: MouseEventType::Move,
                                     };
                                     log::debug!("Mouse X: {}, Y: {}", current_x, current_y);
@@ -158,6 +160,8 @@ pub mod linux {
                                     let mouse_event = MouseEvent {
                                         x: current_x,
                                         y: current_y,
+                                        delta_x: Some(0.0),
+                                        delta_y: Some(event.value() as f64),
                                         event_type: MouseEventType::Move,
                                     };
                                     log::debug!("Mouse X: {}, Y: {}", current_x, current_y);
@@ -167,6 +171,8 @@ pub mod linux {
                                     let scroll_event = MouseEvent {
                                         x: current_x,
                                         y: current_y,
+                                        delta_x: None,
+                                        delta_y: None,
                                         event_type: if event.value() > 0 {
                                             MouseEventType::ScrollUp
                                         } else {
@@ -208,6 +214,8 @@ pub mod linux {
                                 let mouse_event = MouseEvent {
                                     x: current_x,
                                     y: current_y,
+                                    delta_x: None,
+                                    delta_y: None,
                                     event_type,
                                 };
                                 let _ = sender.send(mouse_event);
