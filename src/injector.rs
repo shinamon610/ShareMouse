@@ -112,74 +112,116 @@ pub mod macos {
 pub mod linux {
     use super::*;
     use crate::capturer::{MouseEvent, MouseEventType};
-    use uinput::Device;
+    use std::process::Command;
     
     pub struct LinuxInjector {
-        device: Device,
+        // For Wayland, we'll use external tools or direct protocol calls
     }
     
     impl LinuxInjector {
         pub fn new() -> Result<Self> {
-            let device = uinput::default()?
-                .name("sharemouse-virtual")?
-                .event(uinput::event::Event::Controller(uinput::event::controller::Controller::Mouse(uinput::event::controller::Mouse::Left)))?
-                .event(uinput::event::Event::Controller(uinput::event::controller::Controller::Mouse(uinput::event::controller::Mouse::Right)))?
-                .event(uinput::event::Event::Controller(uinput::event::controller::Controller::Mouse(uinput::event::controller::Mouse::Middle)))?
-                .event(uinput::event::Event::Relative(uinput::event::relative::Relative::Position(uinput::event::relative::Position::X)))?
-                .event(uinput::event::Event::Relative(uinput::event::relative::Relative::Position(uinput::event::relative::Position::Y)))?
-                .event(uinput::event::Event::Relative(uinput::event::relative::Relative::Wheel(uinput::event::relative::Wheel::Vertical)))?
-                .create()?;
-            
-            Ok(Self { device })
+            // For Wayland, we don't need uinput device creation
+            Ok(Self {})
         }
     }
     
     impl MouseInjector for LinuxInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
-            use uinput::event::controller::{Controller, Mouse};
-            
             log::debug!("Injecting event: {:?} at ({}, {})", event.event_type, event.x, event.y);
             
             match event.event_type {
                 MouseEventType::Move => {
-                    // For absolute positioning, we need to use ABS events
-                    // This is a simplified implementation - proper absolute positioning requires more setup
-                    log::debug!("Moving mouse to ({}, {})", event.x, event.y);
+                    // Use wl-pointer-position tool if available, or fall back to direct Wayland protocol
+                    self.move_cursor_wayland(event.x as i32, event.y as i32)?;
                 }
                 MouseEventType::LeftClick => {
-                    self.device.click(&Controller::Mouse(Mouse::Left))?;
-                    self.device.synchronize()?;
+                    self.click_wayland(1, true)?;
                 }
                 MouseEventType::LeftRelease => {
-                    self.device.release(&Controller::Mouse(Mouse::Left))?;
-                    self.device.synchronize()?;
+                    self.click_wayland(1, false)?;
                 }
                 MouseEventType::RightClick => {
-                    self.device.click(&Controller::Mouse(Mouse::Right))?;
-                    self.device.synchronize()?;
+                    self.click_wayland(3, true)?;
                 }
                 MouseEventType::RightRelease => {
-                    self.device.release(&Controller::Mouse(Mouse::Right))?;
-                    self.device.synchronize()?;
+                    self.click_wayland(3, false)?;
                 }
                 MouseEventType::MiddleClick => {
-                    self.device.click(&Controller::Mouse(Mouse::Middle))?;
-                    self.device.synchronize()?;
+                    self.click_wayland(2, true)?;
                 }
                 MouseEventType::MiddleRelease => {
-                    self.device.release(&Controller::Mouse(Mouse::Middle))?;
-                    self.device.synchronize()?;
+                    self.click_wayland(2, false)?;
                 }
                 MouseEventType::ScrollUp => {
-                    // Scroll events need different handling in uinput
-                    log::debug!("Scroll up event");
+                    self.scroll_wayland(1)?;
                 }
                 MouseEventType::ScrollDown => {
-                    // Scroll events need different handling in uinput  
-                    log::debug!("Scroll down event");
+                    self.scroll_wayland(-1)?;
                 }
             }
             
+            Ok(())
+        }
+        
+    }
+    
+    impl LinuxInjector {
+        fn move_cursor_wayland(&self, x: i32, y: i32) -> Result<()> {
+            log::debug!("Moving Wayland cursor to ({}, {})", x, y);
+            
+            // Try different approaches for Wayland cursor movement
+            
+            // Approach 1: Try wlrctl if available
+            if let Ok(_) = Command::new("wlrctl")
+                .args(["pointer", "move", &x.to_string(), &y.to_string()])
+                .output() {
+                return Ok(());
+            }
+            
+            // Approach 2: Try wl-pointer-warp if available  
+            if let Ok(_) = Command::new("wl-pointer-warp")
+                .args([&x.to_string(), &y.to_string()])
+                .output() {
+                return Ok(());
+            }
+            
+            // Approach 3: Try hyprctl for Hyprland
+            if let Ok(_) = Command::new("hyprctl")
+                .args(["dispatch", "movecursor", &format!("{} {}", x, y)])
+                .output() {
+                return Ok(());
+            }
+            
+            log::warn!("No suitable Wayland cursor tool found");
+            Ok(())
+        }
+        
+        fn click_wayland(&self, button: i32, press: bool) -> Result<()> {
+            let action = if press { "press" } else { "release" };
+            log::debug!("Wayland mouse {} button {}", action, button);
+            
+            // Try wlrctl
+            if let Ok(_) = Command::new("wlrctl")
+                .args(["pointer", "click", &button.to_string()])
+                .output() {
+                return Ok(());
+            }
+            
+            log::warn!("No suitable Wayland click tool found");
+            Ok(())
+        }
+        
+        fn scroll_wayland(&self, direction: i32) -> Result<()> {
+            log::debug!("Wayland scroll direction {}", direction);
+            
+            // Try wlrctl
+            if let Ok(_) = Command::new("wlrctl")
+                .args(["pointer", "scroll", &direction.to_string()])
+                .output() {
+                return Ok(());
+            }
+            
+            log::warn!("No suitable Wayland scroll tool found");
             Ok(())
         }
     }

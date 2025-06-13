@@ -23,6 +23,9 @@
             pkg-config 
             systemd.dev
             libevdev
+            wayland
+            wayland-protocols
+            hyprland
           ];
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
         };
