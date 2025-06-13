@@ -1,0 +1,11 @@
+mode: sender
+remote_ip: 100.64.1.12
+remote_port: 5000
+screen:
+  width: 5120
+  height: 2880
+edge:
+  sender_to_receiver: right
+  receiver_to_sender: left
+protocol: udp
+buffer_size: 4096
