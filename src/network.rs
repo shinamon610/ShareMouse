@@ -64,7 +64,8 @@ impl NetworkSender {
         match self.config.protocol {
             Protocol::Udp => {
                 let socket = UdpSocket::bind("0.0.0.0:0").await?;
-                log::info!("UDP socket bound, waiting for events to send...");
+                let local_addr = socket.local_addr()?;
+                log::info!("UDP socket bound to {}, will send to {}", local_addr, remote_addr);
                 
                 while let Some(event) = receiver.recv().await {
                     log::info!("NetworkSender received event: {:?} at ({}, {})", event.event_type, event.x, event.y);
