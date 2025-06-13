@@ -170,7 +170,7 @@ impl VirtualMouseProcessor {
             vm.update_from_physical(physical_coord.clone(), &self.transformer);
             
             // 2. 制御領域を再判定（座標更新後）
-            let should_control_side = vm.determine_control_side(&self.transformer);
+            let should_control_side = vm.determine_control_side(&self.transformer, &physical_coord);
             let control_changed = vm.control_side != should_control_side;
             
             if control_changed {
@@ -194,7 +194,8 @@ impl VirtualMouseProcessor {
                         y: remote_coord.y,
                         event_type: physical_event.event_type.clone(),
                     };
-                    log::debug!("Sending to remote: ({}, {})", network_event.x, network_event.y);
+                    log::info!("Sending to remote: ({}, {}) [virtual: ({}, {})]", 
+                              network_event.x, network_event.y, vm.virtual_position.x, vm.virtual_position.y);
                     let _ = network_tx.send(network_event);
                 }
             }

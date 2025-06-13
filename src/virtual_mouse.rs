@@ -43,6 +43,8 @@ impl VirtualMouse {
             ControlSide::Local => {
                 // Local側制御時：物理位置を仮想座標に変換
                 self.virtual_position = transformer.local_to_virtual(physical_pos.clone());
+                log::debug!("Local control: physical ({}, {}) -> virtual ({}, {})", 
+                           physical_pos.x, physical_pos.y, self.virtual_position.x, self.virtual_position.y);
                 self.last_physical_position = Some(physical_pos);
             }
             ControlSide::Remote => {
@@ -51,13 +53,27 @@ impl VirtualMouse {
                     let delta_x = physical_pos.x - last_pos.x;
                     let delta_y = physical_pos.y - last_pos.y;
                     
+                    log::debug!("Remote control: physical ({}, {}) -> last ({}, {}) -> delta ({}, {})", 
+                               physical_pos.x, physical_pos.y, last_pos.x, last_pos.y, delta_x, delta_y);
+                    
+                    let old_virtual = self.virtual_position.clone();
                     self.virtual_position.x += delta_x;
                     self.virtual_position.y += delta_y;
                     
+                    log::debug!("Remote control: virtual before bounds ({}, {}) -> after delta ({}, {})", 
+                               old_virtual.x, old_virtual.y, self.virtual_position.x, self.virtual_position.y);
+                    
                     // 仮想画面境界内に制限
                     let (virtual_width, virtual_height) = transformer.get_virtual_screen_size();
+                    let before_clamp = self.virtual_position.clone();
                     self.virtual_position.x = self.virtual_position.x.max(0.0).min(virtual_width as f64 - 1.0);
                     self.virtual_position.y = self.virtual_position.y.max(0.0).min(virtual_height as f64 - 1.0);
+                    
+                    log::debug!("Remote control: virtual bounds check ({}, {}) -> final ({}, {}), screen size: {}x{}", 
+                               before_clamp.x, before_clamp.y, self.virtual_position.x, self.virtual_position.y,
+                               virtual_width, virtual_height);
+                } else {
+                    log::warn!("Remote control but no last_physical_position available");
                 }
                 self.last_physical_position = Some(physical_pos);
             }
@@ -78,8 +94,8 @@ impl VirtualMouse {
         }
     }
     
-    /// 現在の制御領域を判定
-    pub fn determine_control_side(&self, transformer: &CoordinateTransformer) -> ControlSide {
+    /// 現在の制御領域を判定（物理座標も考慮）
+    pub fn determine_control_side(&self, transformer: &CoordinateTransformer, physical_pos: &LocalCoordinate) -> ControlSide {
         use crate::config::Position;
         
         match transformer.config.layout.position {
@@ -92,8 +108,10 @@ impl VirtualMouse {
                 }
             }
             Position::Right => {
-                // 自分が右側：仮想X座標でどちら側か判定
-                if self.virtual_position.x >= transformer.config.remote_screen.width as f64 {
+                // 自分が右側：物理座標が左端近くなら強制的にRemote制御
+                if physical_pos.x <= 5.0 {
+                    ControlSide::Remote
+                } else if self.virtual_position.x >= transformer.config.remote_screen.width as f64 {
                     ControlSide::Local
                 } else {
                     ControlSide::Remote
