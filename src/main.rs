@@ -8,6 +8,7 @@ mod config;
 mod capturer;
 mod injector;
 mod network;
+mod coordinate;
 
 #[derive(Parser)]
 #[command(name = "sharemouse")]
@@ -157,25 +158,16 @@ impl EdgeDetector {
     }
     
     fn should_send_event(&self, event: &capturer::MouseEvent) -> bool {
-        use crate::config::EdgeDirection;
+        use crate::coordinate::{CoordinateTransformer, LocalCoordinate};
         
-        let should_send = match self.config.edge.sender_to_receiver {
-            EdgeDirection::Right => {
-                // Test with much lower threshold to verify detection works
-                let threshold = 2500.0; // Test threshold
-                let result = event.x >= threshold;
-                if result {
-                    log::info!("Edge triggered! Mouse at x={}, threshold={}", event.x, threshold);
-                }
-                result
-            },
-            EdgeDirection::Left => event.x <= 0.0,
-            EdgeDirection::Top => event.y <= 0.0,
-            EdgeDirection::Bottom => event.y >= (self.config.screen.height - 1) as f64,
-        };
+        let transformer = CoordinateTransformer::new(self.config.clone());
+        let local_coord = LocalCoordinate::from(event.clone());
+        
+        let should_send = transformer.is_at_transfer_edge(&local_coord);
         
         // Debug log for edge detection
         if should_send {
+            log::info!("Edge triggered! Mouse at ({}, {}) - transferring control", event.x, event.y);
             log::info!("Sending event to remote: {:?} at ({}, {})", event.event_type, event.x, event.y);
         }
         
