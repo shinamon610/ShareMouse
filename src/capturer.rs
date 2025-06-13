@@ -71,7 +71,6 @@ pub mod macos {
 pub mod linux {
     use super::*;
     use evdev::{Device, InputEventKind};
-    use std::path::Path;
     
     pub struct LinuxCapturer {
         device_path: String,
@@ -86,13 +85,13 @@ pub mod linux {
     }
     
     impl MouseCapturer for LinuxCapturer {
-        async fn start_capture(&self, sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
+        async fn start_capture(&self, _sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
             let mut device = Device::open(&self.device_path)?;
             
             loop {
                 let events = device.fetch_events()?;
                 for event in events {
-                    if let InputEventKind::RelAxis(axis) = event.kind() {
+                    if let InputEventKind::RelAxis(_axis) = event.kind() {
                         // TODO: Implement Linux mouse event handling
                     }
                 }

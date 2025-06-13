@@ -113,8 +113,6 @@ pub mod linux {
     use super::*;
     use crate::capturer::{MouseEvent, MouseEventType};
     use uinput::Device;
-    use uinput::event::keyboard::Key;
-    use uinput::event::relative::RelativeAxis;
     
     pub struct LinuxInjector {
         device: Device,
@@ -124,8 +122,12 @@ pub mod linux {
         pub fn new() -> Result<Self> {
             let device = uinput::default()?
                 .name("sharemouse-virtual")?
-                .event(uinput::event::Keyboard::All)?
-                .event(uinput::event::Relative::All)?
+                .event(uinput::event::Event::Controller(uinput::event::controller::Controller::Mouse(uinput::event::controller::Mouse::Left)))?
+                .event(uinput::event::Event::Controller(uinput::event::controller::Controller::Mouse(uinput::event::controller::Mouse::Right)))?
+                .event(uinput::event::Event::Controller(uinput::event::controller::Controller::Mouse(uinput::event::controller::Mouse::Middle)))?
+                .event(uinput::event::Event::Relative(uinput::event::relative::Relative::Position(uinput::event::relative::Position::X)))?
+                .event(uinput::event::Event::Relative(uinput::event::relative::Relative::Position(uinput::event::relative::Position::Y)))?
+                .event(uinput::event::Event::Relative(uinput::event::relative::Relative::Wheel(uinput::event::relative::Wheel::Vertical)))?
                 .create()?;
             
             Ok(Self { device })
