@@ -164,16 +164,19 @@ impl VirtualMouseProcessor {
         while let Some(physical_event) = capture_rx.recv().await {
             let mut vm = self.virtual_mouse.lock().unwrap();
             
-            // 1. 物理マウス位置から仮想座標を更新
             let physical_coord = coordinate::LocalCoordinate::from(physical_event.clone());
-            vm.update_from_physical(physical_coord, &self.transformer);
             
-            // 2. 現在の制御領域を判定
+            // 1. 現在の制御状態に応じて座標更新
+            vm.update_from_physical(physical_coord.clone(), &self.transformer);
+            
+            // 2. 制御領域を再判定（座標更新後）
             let should_control_side = vm.determine_control_side(&self.transformer);
             let control_changed = vm.control_side != should_control_side;
             
             if control_changed {
-                vm.switch_control(should_control_side);
+                log::info!("Control changing from {:?} to {:?} at virtual ({}, {})", 
+                          vm.control_side, should_control_side, vm.virtual_position.x, vm.virtual_position.y);
+                vm.switch_control(should_control_side, &physical_coord);
                 
                 // 制御権移譲時：相手側に初期位置を送信
                 if let Some(transfer_event) = vm.create_transfer_event(&self.transformer) {

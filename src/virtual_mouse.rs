@@ -65,10 +65,16 @@ impl VirtualMouse {
     }
     
     /// 制御権を切り替える
-    pub fn switch_control(&mut self, new_side: ControlSide) {
+    pub fn switch_control(&mut self, new_side: ControlSide, current_physical_pos: &LocalCoordinate) {
         if self.control_side != new_side {
             log::info!("Control switched from {:?} to {:?}", self.control_side, new_side);
             self.control_side = new_side;
+            
+            // 制御権切り替え時に物理マウス位置をリセット
+            // これで次回のdelta計算が正しく動作する
+            self.last_physical_position = Some(current_physical_pos.clone());
+            log::info!("Reset physical position to ({}, {}) for new control", 
+                      current_physical_pos.x, current_physical_pos.y);
         }
     }
     
