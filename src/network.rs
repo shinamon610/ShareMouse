@@ -110,12 +110,18 @@ impl NetworkReceiver {
                 loop {
                     let (len, addr) = socket.recv_from(&mut buf).await?;
                     log::debug!("Received {} bytes from {}", len, addr);
-                    if let Ok(net_event) = bincode::deserialize::<NetworkMouseEvent>(&buf[..len]) {
-                        log::debug!("Parsed event: {:?}", net_event);
-                        let event = MouseEvent::from(net_event);
-                        let _ = sender.send(event);
-                    } else {
-                        log::warn!("Failed to deserialize network event");
+                    log::debug!("Raw bytes: {:?}", &buf[..len]);
+                    match bincode::deserialize::<NetworkMouseEvent>(&buf[..len]) {
+                        Ok(net_event) => {
+                            log::debug!("Parsed event: {:?}", net_event);
+                            let event = MouseEvent::from(net_event);
+                            let _ = sender.send(event);
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to deserialize network event: {}", e);
+                            log::debug!("Attempting to deserialize as string: {:?}", 
+                                      String::from_utf8_lossy(&buf[..len]));
+                        }
                     }
                 }
             }
