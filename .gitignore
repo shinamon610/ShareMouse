@@ -18,3 +18,6 @@ Thumbs.db
 
 # Runtime configs (optional - comment out if you want to version control configs)
 config.yaml
+
+.envrc
+.direnv
