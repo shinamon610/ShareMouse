@@ -9,15 +9,7 @@ pub struct Config {
     pub remote_port: u16,
     pub screen: Screen,
     pub remote_screen: Screen,
-    pub layout: Layout,
-    pub edge: Edge,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    Sender,
-    Receiver,
+    pub host_position: HostPosition,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -27,34 +19,10 @@ pub struct Screen {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Edge {
-    pub sender_to_receiver: EdgeDirection,
-    pub receiver_to_sender: EdgeDirection,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum EdgeDirection {
+pub enum HostPosition {
     Left,
     Right,
-    Top,
-    Bottom,
-}
-
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Layout {
-    pub position: Position,
-    pub remote_position: Position,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Position {
-    Left,
-    Right,
-    Top,
-    Bottom,
 }
 
 impl Config {
@@ -66,7 +34,7 @@ impl Config {
 
     pub fn create_template<P: AsRef<Path>>(path: P) -> Result<()> {
         let template = Config {
-            remote_ip: "000".to_string(),
+            remote_ip: "192.168.1.100".to_string(),
             remote_port: 5000,
             screen: Screen {
                 width: 2600,
@@ -76,14 +44,7 @@ impl Config {
                 width: 1920,
                 height: 1080,
             },
-            layout: Layout {
-                position: Position::Left,
-                remote_position: Position::Right,
-            },
-            edge: Edge {
-                sender_to_receiver: EdgeDirection::Right,
-                receiver_to_sender: EdgeDirection::Left,
-            },
+            host_position: HostPosition::Left,
         };
 
         let yaml = serde_yaml::to_string(&template)?;
