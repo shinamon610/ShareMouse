@@ -11,8 +11,6 @@ pub struct Config {
     pub remote_screen: Screen,
     pub layout: Layout,
     pub edge: Edge,
-    pub protocol: Protocol,
-    pub buffer_size: usize,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -43,12 +41,6 @@ pub enum EdgeDirection {
     Bottom,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Protocol {
-    Udp,
-    Tcp,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Layout {
@@ -92,8 +84,6 @@ impl Config {
                 sender_to_receiver: EdgeDirection::Right,
                 receiver_to_sender: EdgeDirection::Left,
             },
-            protocol: Protocol::Udp,
-            buffer_size: 4096,
         };
 
         let yaml = serde_yaml::to_string(&template)?;
