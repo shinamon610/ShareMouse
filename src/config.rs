@@ -51,7 +51,7 @@ impl Config {
         fs::write(path, yaml)?;
         Ok(())
     }
-    pub fn host_center(self) -> (f64, f64) {
+    pub fn host_center(&self) -> (f64, f64) {
         let x = self.screen.width as f64 / 2.0;
         let y = self.screen.height as f64 / 2.0;
         return (x, y);
