@@ -5,8 +5,15 @@
     utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, utils, naersk }:
-    utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      utils,
+      naersk,
+    }:
+    utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs { inherit system; };
         naersk-lib = pkgs.callPackage naersk { };
@@ -14,13 +21,13 @@
       {
         defaultPackage = naersk-lib.buildPackage ./.;
         devShell = pkgs.mkShell {
-          buildInputs = with pkgs; [ 
-            cargo 
-            rustc 
-            rustfmt 
-            pre-commit 
-            rustPackages.clippy 
-            pkg-config 
+          buildInputs = with pkgs; [
+            cargo
+            rustc
+            rustfmt
+            pre-commit
+            rustPackages.clippy
+            pkg-config
             systemd.dev
             libevdev
             wayland
