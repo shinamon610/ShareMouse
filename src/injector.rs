@@ -127,7 +127,8 @@ pub mod linux {
     
     impl MouseInjector for LinuxInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
-            log::debug!("Injecting event: {:?} at ({}, {})", event.event_type, event.x, event.y);
+            log::info!("Injecting event: {:?} at ({}, {}) with delta ({:?}, {:?})", 
+                      event.event_type, event.x, event.y, event.delta_x, event.delta_y);
             
             match event.event_type {
                 MouseEventType::Move => {
@@ -201,33 +202,57 @@ pub mod linux {
         }
         
         fn move_cursor_relative_wayland(&self, dx: i32, dy: i32) -> Result<()> {
-            log::debug!("Moving Wayland cursor relatively by ({}, {})", dx, dy);
+            log::info!("Attempting Wayland relative cursor movement by ({}, {})", dx, dy);
             
             // Approach 1: Try wlrctl relative movement
-            if let Ok(output) = Command::new("wlrctl")
+            log::info!("Trying wlrctl pointer move-relative {} {}", dx, dy);
+            match Command::new("wlrctl")
                 .args(["pointer", "move-relative", &dx.to_string(), &dy.to_string()])
                 .output() {
-                if output.status.success() {
-                    return Ok(());
+                Ok(output) => {
+                    log::info!("wlrctl exit status: {}, stdout: {}, stderr: {}", 
+                              output.status, 
+                              String::from_utf8_lossy(&output.stdout),
+                              String::from_utf8_lossy(&output.stderr));
+                    if output.status.success() {
+                        return Ok(());
+                    }
                 }
+                Err(e) => log::info!("wlrctl command failed: {}", e),
             }
             
             // Approach 2: Try hyprctl relative movement for Hyprland
-            if let Ok(output) = Command::new("hyprctl")
+            log::info!("Trying hyprctl dispatch movecursor relative {} {}", dx, dy);
+            match Command::new("hyprctl")
                 .args(["dispatch", "movecursor", "relative", &dx.to_string(), &dy.to_string()])
                 .output() {
-                if output.status.success() {
-                    return Ok(());
+                Ok(output) => {
+                    log::info!("hyprctl exit status: {}, stdout: {}, stderr: {}", 
+                              output.status, 
+                              String::from_utf8_lossy(&output.stdout),
+                              String::from_utf8_lossy(&output.stderr));
+                    if output.status.success() {
+                        return Ok(());
+                    }
                 }
+                Err(e) => log::info!("hyprctl command failed: {}", e),
             }
             
             // Fallback: Try ydotool for relative movement
-            if let Ok(output) = Command::new("ydotool")
+            log::info!("Trying ydotool mousemove -- {} {}", dx, dy);
+            match Command::new("ydotool")
                 .args(["mousemove", "--", &dx.to_string(), &dy.to_string()])
                 .output() {
-                if output.status.success() {
-                    return Ok(());
+                Ok(output) => {
+                    log::info!("ydotool exit status: {}, stdout: {}, stderr: {}", 
+                              output.status, 
+                              String::from_utf8_lossy(&output.stdout),
+                              String::from_utf8_lossy(&output.stderr));
+                    if output.status.success() {
+                        return Ok(());
+                    }
                 }
+                Err(e) => log::info!("ydotool command failed: {}", e),
             }
             
             log::warn!("No suitable Wayland relative cursor movement tool found");
