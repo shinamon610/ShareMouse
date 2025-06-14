@@ -3,6 +3,18 @@ use crate::event::MouseEventType;
 use crate::virtual_model::SharedVirtualModel;
 use anyhow::Result;
 use tokio::sync::mpsc;
+use std::sync::Once;
+use std::sync::Mutex as StdMutex;
+
+// グローバルな状態を管理するための構造体
+struct GlobalState {
+    virtual_model: Option<SharedVirtualModel>,
+    sender: Option<mpsc::UnboundedSender<MouseEvent>>,
+    is_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+static GLOBAL_STATE: StdMutex<Option<GlobalState>> = StdMutex::new(None);
+static INIT: Once = Once::new();
 
 pub trait MouseCapturer {
     async fn start_capture_with_model(
@@ -86,7 +98,7 @@ pub mod macos {
             virtual_model: SharedVirtualModel,
         ) -> Result<()> {
             self.is_running.store(true, Ordering::SeqCst);
-            log::info!("Starting macOS mouse capture with VirtualModel");
+            log::info!("Starting macOS mouse capture with rdev");
 
             // アクセシビリティ権限をチェック
             log::info!("Checking accessibility permissions...");
@@ -117,69 +129,137 @@ pub mod macos {
                 }
             }
 
-            // 現在のマウス位置を取得する関数
-            let get_mouse_location = || -> CGPoint {
+            // 初期マウス位置を設定
+            let current_position = unsafe {
                 use cocoa::appkit::NSEvent;
                 use cocoa::base::nil;
-
-                unsafe {
-                    let mouse_location = NSEvent::mouseLocation(nil);
-                    CGPoint::new(mouse_location.x, mouse_location.y)
-                }
+                let mouse_location = NSEvent::mouseLocation(nil);
+                CGPoint::new(mouse_location.x, mouse_location.y)
             };
-
-            let mut last_position = get_mouse_location();
+            
             {
-                log::info!(
-                    "Mouse capture at position ({}, {})",
-                    last_position.x,
-                    last_position.y
-                );
                 let mut locked = virtual_model.lock().unwrap();
-                locked.init(last_position.x, last_position.y);
+                locked.init(current_position.x, current_position.y);
+                log::info!("VirtualModel initialized at ({}, {})", current_position.x, current_position.y);
             }
 
-            while self.is_running.load(Ordering::SeqCst) {
-                let current_position = get_mouse_location();
+            // グローバル状態を設定
+            {
+                let mut global_state = GLOBAL_STATE.lock().unwrap();
+                *global_state = Some(GlobalState {
+                    virtual_model: Some(virtual_model.clone()),
+                    sender: Some(sender.clone()),
+                    is_running: self.is_running.clone(),
+                });
+            }
 
-                // 相対移動量を計算
-                let delta_x = current_position.x - last_position.x;
-                let delta_y = current_position.y - last_position.y;
+            // rdevでマウスイベントをリッスン（別スレッドで実行）
+            std::thread::spawn(move || {
+                use rdev::{listen, Event, EventType};
+                
+                fn event_callback(event: Event) {
+                    let global_state = GLOBAL_STATE.lock().unwrap();
+                    if let Some(state) = global_state.as_ref() {
+                        if !state.is_running.load(std::sync::atomic::Ordering::SeqCst) {
+                            return;
+                        }
+                        
+                        if let (Some(vm), Some(sender)) = (state.virtual_model.as_ref(), state.sender.as_ref()) {
+                            match event.event_type {
+                                EventType::MouseMove { x, y } => {
+                                    log::debug!("Mouse moved to: ({}, {})", x, y);
+                                    
+                                    // VirtualModelを更新
+                                    if let Ok(mut vm) = vm.lock() {
+                                        vm.virtual_x = x;
+                                        vm.virtual_y = y;
+                                        log::debug!("VirtualModel updated: ({}, {})", vm.virtual_x, vm.virtual_y);
+                                    }
 
-                // 移動があった場合のみ処理
-                if delta_x.abs() > 0.1 || delta_y.abs() > 0.1 {
-                    log::debug!(
-                        "Mouse moved: position=({:.1}, {:.1}), delta=({:.1}, {:.1})",
-                        current_position.x,
-                        current_position.y,
-                        delta_x,
-                        delta_y
-                    );
+                                    // MouseEventを送信
+                                    let mouse_event = MouseEvent {
+                                        x,
+                                        y,
+                                        event_type: MouseEventType::Move,
+                                    };
 
-                    // VirtualModelを直接更新
-                    if let Ok(mut vm) = virtual_model.lock() {
-                        vm.virtual_x = current_position.x;
-                        vm.virtual_y = current_position.y;
-                        log::debug!("VirtualModel updated: ({}, {})", vm.virtual_x, vm.virtual_y);
+                                    if let Err(e) = sender.send(mouse_event) {
+                                        log::error!("Failed to send mouse event: {}", e);
+                                    }
+                                },
+                                EventType::ButtonPress(button) => {
+                                    if let Ok(vm) = vm.lock() {
+                                        let event_type = match button {
+                                            rdev::Button::Left => MouseEventType::LeftClick,
+                                            rdev::Button::Right => MouseEventType::RightClick,
+                                            rdev::Button::Middle => MouseEventType::MiddleClick,
+                                            _ => return,
+                                        };
+
+                                        let mouse_event = MouseEvent {
+                                            x: vm.virtual_x,
+                                            y: vm.virtual_y,
+                                            event_type,
+                                        };
+
+                                        if let Err(e) = sender.send(mouse_event) {
+                                            log::error!("Failed to send mouse click event: {}", e);
+                                        }
+                                    }
+                                },
+                                EventType::ButtonRelease(button) => {
+                                    if let Ok(vm) = vm.lock() {
+                                        let event_type = match button {
+                                            rdev::Button::Left => MouseEventType::LeftRelease,
+                                            rdev::Button::Right => MouseEventType::RightRelease,
+                                            rdev::Button::Middle => MouseEventType::MiddleRelease,
+                                            _ => return,
+                                        };
+
+                                        let mouse_event = MouseEvent {
+                                            x: vm.virtual_x,
+                                            y: vm.virtual_y,
+                                            event_type,
+                                        };
+
+                                        if let Err(e) = sender.send(mouse_event) {
+                                            log::error!("Failed to send mouse release event: {}", e);
+                                        }
+                                    }
+                                },
+                                EventType::Wheel { delta_x: _, delta_y } => {
+                                    if let Ok(vm) = vm.lock() {
+                                        let event_type = if delta_y > 0 {
+                                            MouseEventType::ScrollUp
+                                        } else {
+                                            MouseEventType::ScrollDown
+                                        };
+
+                                        let mouse_event = MouseEvent {
+                                            x: vm.virtual_x,
+                                            y: vm.virtual_y,
+                                            event_type,
+                                        };
+
+                                        if let Err(e) = sender.send(mouse_event) {
+                                            log::error!("Failed to send mouse scroll event: {}", e);
+                                        }
+                                    }
+                                },
+                                _ => {}
+                            }
+                        }
                     }
-
-                    // 絶対座標でMouseEventを送信
-                    let mouse_event = MouseEvent {
-                        x: current_position.x,
-                        y: current_position.y,
-                        event_type: MouseEventType::Move,
-                    };
-
-                    if let Err(e) = sender.send(mouse_event) {
-                        log::error!("Failed to send mouse event: {}", e);
-                        break;
-                    }
-
-                    last_position = current_position;
                 }
-                self.warp_to_center().unwrap();
+                
+                if let Err(e) = listen(event_callback) {
+                    log::error!("rdev listen error: {:?}", e);
+                }
+            });
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            // メインループを維持
+            while self.is_running.load(Ordering::SeqCst) {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
 
             log::info!("Mouse capture stopped");
