@@ -71,7 +71,7 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 
-    let virtual_model: SharedVirtualModel = Arc::new(Mutex::new(VirtualModel::new(config.clone())));
+    let virtual_model: SharedVirtualModel = Arc::new(Mutex::new(VirtualModel::new()));
 
     let (network_tx, network_rx) = mpsc::unbounded_channel();
 
@@ -81,7 +81,7 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
 
     tokio::spawn(async move {
         if let Err(e) = capturer
-            .start_capture_with_model(network_tx, virtual_model)
+            .start_capture_with_model(&config, network_tx, virtual_model)
             .await
         {
             error!("Capture error: {}", e);

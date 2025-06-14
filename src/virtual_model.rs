@@ -13,7 +13,7 @@ fn inner_crop(target: f64, max: f64) -> f64 {
 }
 
 impl VirtualModel {
-    pub fn new(config: Config) -> Self {
+    pub fn new() -> Self {
         Self {
             virtual_x: 0.0,
             virtual_y: 0.0,

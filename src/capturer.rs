@@ -20,6 +20,7 @@ static INIT: Once = Once::new();
 pub trait MouseCapturer {
     async fn start_capture_with_model(
         &self,
+        config: &Config,
         sender: mpsc::UnboundedSender<MouseEvent>,
         virtual_model: SharedVirtualModel,
     ) -> Result<()>;
@@ -85,6 +86,7 @@ pub mod macos {
     impl MouseCapturer for MacOSCapturer {
         async fn start_capture_with_model(
             &self,
+            config: &Config,
             sender: mpsc::UnboundedSender<MouseEvent>,
             virtual_model: SharedVirtualModel,
         ) -> Result<()> {
@@ -130,7 +132,7 @@ pub mod macos {
 
             {
                 let mut locked = virtual_model.lock().unwrap();
-                locked.init(current_position.x, current_position.y);
+                locked.init(config, current_position.x, current_position.y);
                 log::info!(
                     "VirtualModel initialized at ({}, {})",
                     current_position.x,
