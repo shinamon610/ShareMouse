@@ -222,9 +222,9 @@ pub mod linux {
             }
             
             // Approach 2: Try hyprctl relative movement for Hyprland
-            log::info!("Trying hyprctl dispatch movecursor relative {} {}", dx, dy);
+            log::info!("Trying hyprctl dispatch movecursor {} {}", dx, dy);
             match Command::new("hyprctl")
-                .args(["dispatch", "movecursor", "relative", &dx.to_string(), &dy.to_string()])
+                .args(["dispatch", "movecursor", &dx.to_string(), &dy.to_string()])
                 .output() {
                 Ok(output) => {
                     log::info!("hyprctl exit status: {}, stdout: {}, stderr: {}", 
