@@ -113,6 +113,18 @@ pub mod macos {
                         log::debug!("VirtualModel updated: ({}, {})", vm.virtual_x, vm.virtual_y);
                     }
 
+                    // 絶対座標でMouseEventを送信
+                    let mouse_event = MouseEvent {
+                        x: current_position.x,
+                        y: current_position.y,
+                        event_type: MouseEventType::Move,
+                    };
+
+                    if let Err(e) = sender.send(mouse_event) {
+                        log::error!("Failed to send mouse event: {}", e);
+                        break;
+                    }
+
                     last_position = current_position;
                 }
 
