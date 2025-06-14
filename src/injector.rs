@@ -114,14 +114,21 @@ pub mod linux {
     use crate::capturer::{MouseEvent, MouseEventType};
     use std::process::Command;
     
-    pub struct LinuxInjector {
-        // For Wayland, we'll use external tools or direct protocol calls
-    }
+    pub struct LinuxInjector;
     
     impl LinuxInjector {
         pub fn new() -> Result<Self> {
-            // For Wayland, we don't need uinput device creation
-            Ok(Self {})
+            // ydotoolデーモンの可用性をチェック
+            let output = Command::new("ydotool")
+                .args(["--help"])
+                .output()
+                .map_err(|e| anyhow::anyhow!("ydotool not found or not executable: {}", e))?;
+            
+            if !output.status.success() {
+                return Err(anyhow::anyhow!("ydotool command failed"));
+            }
+            
+            Ok(Self)
         }
     }
     
