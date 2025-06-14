@@ -83,14 +83,12 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
 
     let network_sender = network::NetworkSender::new(config.clone());
 
-    // 物理マウスキャプチャ → 直接ネットワーク送信
     tokio::spawn(async move {
         if let Err(e) = capturer.start_capture(network_tx).await {
             error!("Capture error: {}", e);
         }
     });
 
-    // ネットワーク送信
     network_sender.start(network_rx).await?;
 
     Ok(())
