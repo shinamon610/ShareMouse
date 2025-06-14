@@ -1,4 +1,6 @@
+use crate::config::Config;
 use crate::event::MouseEvent;
+
 use crate::virtual_model::SharedVirtualModel;
 use anyhow::Result;
 use std::sync::Mutex as StdMutex;
@@ -45,18 +47,8 @@ pub mod macos {
         }
 
         /// マウスを画面中央に固定する関数
-        pub fn warp_to_center(&self) -> Result<()> {
-            use core_graphics::display::CGMainDisplayID;
-
-            let (_, display_bounds) = unsafe {
-                let display_id = CGMainDisplayID();
-                let display_bounds = core_graphics::display::CGDisplayBounds(display_id);
-                (display_id, display_bounds)
-            };
-
-            let center_x = display_bounds.origin.x + display_bounds.size.width / 2.0;
-            let center_y = display_bounds.origin.y + display_bounds.size.height / 2.0;
-
+        pub fn warp_to_center(&self, config: Config) -> Result<()> {
+            let (center_x, center_y) = config.host_center();
             let center_point = CGPoint::new(center_x, center_y);
 
             match CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
