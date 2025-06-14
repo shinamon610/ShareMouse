@@ -81,10 +81,7 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     use virtual_mouse::{VirtualMouse, SharedVirtualMouse};
     use coordinate::CoordinateTransformer;
     
-    let (capture_tx, capture_rx) = mpsc::unbounded_channel();
     let (network_tx, network_rx) = mpsc::unbounded_channel();
-    // 仮想マウス状態を初期化
-    let virtual_mouse: SharedVirtualMouse = Arc::new(Mutex::new(VirtualMouse::new(&config)));
     
     #[cfg(target_os = "macos")]
     let capturer = capturer::macos::MacOSCapturer::new(
@@ -101,20 +98,13 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     let capturer = capturer::linux::LinuxCapturer::new("/dev/input/event0", config.screen.width, config.screen.height);
     
-    let virtual_mouse_processor = VirtualMouseProcessor::new(config.clone(), virtual_mouse.clone());
     let network_sender = network::NetworkSender::new(config.clone());
     
-    // 物理マウスキャプチャ
+    // 物理マウスキャプチャ → 直接ネットワーク送信
     tokio::spawn(async move {
-        if let Err(e) = capturer.start_capture(capture_tx).await {
+        if let Err(e) = capturer.start_capture(network_tx).await {
             error!("Capture error: {}", e);
         }
-    });
-    
-    // 仮想マウス処理（物理マウス → 仮想座標更新 → 制御判定）
-    // 注入は別スレッドでなく同期処理で行う
-    tokio::spawn(async move {
-        virtual_mouse_processor.process_events(capture_rx, network_tx).await;
     });
     
     // ネットワーク送信
@@ -171,6 +161,8 @@ impl VirtualMouseProcessor {
         log::info!("VirtualMouseProcessor started, waiting for events...");
         
         while let Some(physical_event) = capture_rx.recv().await {
+            log::debug!("Received physical event: ({:.1}, {:.1})", physical_event.x, physical_event.y);
+            
             let mut vm = self.virtual_mouse.lock().unwrap();
             
             let physical_coord = coordinate::LocalCoordinate::from(physical_event.clone());
@@ -186,6 +178,9 @@ impl VirtualMouseProcessor {
             // 2. 制御領域を再判定（座標更新後）
             let should_control_side = vm.determine_control_side(&self.transformer, &physical_coord);
             let control_changed = vm.control_side != should_control_side;
+            
+            log::debug!("Control check: current={:?}, should={:?}, changed={}", 
+                       vm.control_side, should_control_side, control_changed);
             
             if control_changed {
                 log::info!("Control changing from {:?} to {:?} at virtual ({}, {})", 

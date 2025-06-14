@@ -131,8 +131,12 @@ pub mod linux {
             
             match event.event_type {
                 MouseEventType::Move => {
-                    // Use wl-pointer-position tool if available, or fall back to direct Wayland protocol
-                    self.move_cursor_wayland(event.x as i32, event.y as i32)?;
+                    // 移動量がある場合は相対移動、そうでなければ絶対移動
+                    if let (Some(dx), Some(dy)) = (event.delta_x, event.delta_y) {
+                        self.move_cursor_relative_wayland(dx as i32, dy as i32)?;
+                    } else {
+                        self.move_cursor_wayland(event.x as i32, event.y as i32)?;
+                    }
                 }
                 MouseEventType::LeftClick => {
                     self.click_wayland(1, true)?;
@@ -193,6 +197,40 @@ pub mod linux {
             }
             
             log::warn!("No suitable Wayland cursor tool found");
+            Ok(())
+        }
+        
+        fn move_cursor_relative_wayland(&self, dx: i32, dy: i32) -> Result<()> {
+            log::debug!("Moving Wayland cursor relatively by ({}, {})", dx, dy);
+            
+            // Approach 1: Try wlrctl relative movement
+            if let Ok(output) = Command::new("wlrctl")
+                .args(["pointer", "move-relative", &dx.to_string(), &dy.to_string()])
+                .output() {
+                if output.status.success() {
+                    return Ok(());
+                }
+            }
+            
+            // Approach 2: Try hyprctl relative movement for Hyprland
+            if let Ok(output) = Command::new("hyprctl")
+                .args(["dispatch", "movecursor", "relative", &dx.to_string(), &dy.to_string()])
+                .output() {
+                if output.status.success() {
+                    return Ok(());
+                }
+            }
+            
+            // Fallback: Try ydotool for relative movement
+            if let Ok(output) = Command::new("ydotool")
+                .args(["mousemove", "--", &dx.to_string(), &dy.to_string()])
+                .output() {
+                if output.status.success() {
+                    return Ok(());
+                }
+            }
+            
+            log::warn!("No suitable Wayland relative cursor movement tool found");
             Ok(())
         }
         

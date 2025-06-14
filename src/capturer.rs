@@ -158,20 +158,17 @@ pub mod macos {
                     let delta_y = current_position.y - self.screen_center.y;
                     
                     if delta_x.abs() > 2.0 || delta_y.abs() > 2.0 {
-                        // 仮想座標更新
-                        virtual_x += delta_x;
-                        virtual_y += delta_y;
-                        
-                        log::info!("Secondary control: delta=({:.1}, {:.1}), virtual=({:.1}, {:.1})", 
-                                  delta_x, delta_y, virtual_x, virtual_y);
-                        
+                        // Linux側には移動量のみ送信（座標は無関係）
                         let mouse_event = MouseEvent {
-                            x: virtual_x,
-                            y: virtual_y,
+                            x: 0.0,  // 座標は無視
+                            y: 0.0,  // 座標は無視
                             delta_x: Some(delta_x),
                             delta_y: Some(delta_y),
                             event_type: MouseEventType::Move,
                         };
+                        
+                        log::info!("Secondary control: sending delta=({:.1}, {:.1}) to Linux", 
+                                  delta_x, delta_y);
                         
                         if let Ok(sender_guard) = self.sender.lock() {
                             if let Some(sender_ref) = sender_guard.as_ref() {
@@ -211,55 +208,12 @@ pub mod macos {
                             unsafe {
                                 CGWarpMouseCursorPosition(self.screen_center);
                             }
-                            
-                            // 仮想座標を更新（レイアウトに基づく）
-                            match self.transfer_edge.as_str() {
-                                "left" => {
-                                    virtual_x = self.screen_width; // リモート画面の開始位置
-                                    virtual_y = current_position.y;
-                                },
-                                "right" => {
-                                    virtual_x = self.screen_width;
-                                    virtual_y = current_position.y;
-                                },
-                                "top" => {
-                                    virtual_x = current_position.x;
-                                    virtual_y = self.screen_height;
-                                },
-                                "bottom" => {
-                                    virtual_x = current_position.x;
-                                    virtual_y = self.screen_height;
-                                },
-                                _ => {}
-                            }
-                            
-                            log::info!("Switched to secondary control, virtual position: ({:.1}, {:.1})", virtual_x, virtual_y);
                             continue; // この回はイベント送信をスキップ
                         }
                         
-                        // 通常のmacOS側移動
-                        virtual_x = current_position.x;
-                        virtual_y = current_position.y;
-                        
-                        log::debug!("Primary control: position=({:.1}, {:.1}), virtual=({:.1}, {:.1})", 
-                                   current_position.x, current_position.y, virtual_x, virtual_y);
-                        
-                        let mouse_event = MouseEvent {
-                            x: virtual_x,
-                            y: virtual_y,
-                            delta_x: Some(delta_x),
-                            delta_y: Some(delta_y),
-                            event_type: MouseEventType::Move,
-                        };
-                        
-                        if let Ok(sender_guard) = self.sender.lock() {
-                            if let Some(sender_ref) = sender_guard.as_ref() {
-                                if sender_ref.send(mouse_event).is_err() {
-                                    log::error!("Failed to send mouse event");
-                                    break;
-                                }
-                            }
-                        }
+                        // 通常のmacOS側移動（ネットワーク送信なし）
+                        log::debug!("Primary control: position=({:.1}, {:.1}) - not sending to network", 
+                                   current_position.x, current_position.y);
                         
                         last_position = current_position;
                     }
