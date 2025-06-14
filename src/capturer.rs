@@ -1,9 +1,9 @@
 use crate::event::MouseEvent;
 use crate::virtual_model::SharedVirtualModel;
 use anyhow::Result;
-use tokio::sync::mpsc;
-use std::sync::Once;
 use std::sync::Mutex as StdMutex;
+use std::sync::Once;
+use tokio::sync::mpsc;
 
 // グローバルな状態を管理するための構造体
 struct GlobalState {
@@ -135,11 +135,15 @@ pub mod macos {
                 let mouse_location = NSEvent::mouseLocation(nil);
                 CGPoint::new(mouse_location.x, mouse_location.y)
             };
-            
+
             {
                 let mut locked = virtual_model.lock().unwrap();
                 locked.init(current_position.x, current_position.y);
-                log::info!("VirtualModel initialized at ({}, {})", current_position.x, current_position.y);
+                log::info!(
+                    "VirtualModel initialized at ({}, {})",
+                    current_position.x,
+                    current_position.y
+                );
             }
 
             // グローバル状態を設定
@@ -155,24 +159,30 @@ pub mod macos {
             // rdevでマウスイベントをリッスン（別スレッドで実行）
             std::thread::spawn(move || {
                 use rdev::{listen, Event, EventType};
-                
+
                 fn event_callback(event: Event) {
                     let global_state = GLOBAL_STATE.lock().unwrap();
                     if let Some(state) = global_state.as_ref() {
                         if !state.is_running.load(std::sync::atomic::Ordering::SeqCst) {
                             return;
                         }
-                        
-                        if let (Some(vm), Some(sender)) = (state.virtual_model.as_ref(), state.sender.as_ref()) {
+
+                        if let (Some(vm), Some(sender)) =
+                            (state.virtual_model.as_ref(), state.sender.as_ref())
+                        {
                             match event.event_type {
                                 EventType::MouseMove { x, y } => {
                                     log::debug!("Mouse moved to: ({}, {})", x, y);
-                                    
+
                                     // VirtualModelを更新
                                     if let Ok(mut vm) = vm.lock() {
                                         vm.virtual_x = x;
                                         vm.virtual_y = y;
-                                        log::debug!("VirtualModel updated: ({}, {})", vm.virtual_x, vm.virtual_y);
+                                        log::debug!(
+                                            "VirtualModel updated: ({}, {})",
+                                            vm.virtual_x,
+                                            vm.virtual_y
+                                        );
                                     }
 
                                     // MouseEventを送信
@@ -181,7 +191,7 @@ pub mod macos {
                                     if let Err(e) = sender.send(mouse_event) {
                                         log::error!("Failed to send mouse event: {}", e);
                                     }
-                                },
+                                }
                                 EventType::ButtonPress(button) => {
                                     let mouse_event = match button {
                                         rdev::Button::Left => MouseEvent::LeftClick,
@@ -193,7 +203,7 @@ pub mod macos {
                                     if let Err(e) = sender.send(mouse_event) {
                                         log::error!("Failed to send mouse click event: {}", e);
                                     }
-                                },
+                                }
                                 EventType::ButtonRelease(button) => {
                                     let mouse_event = match button {
                                         rdev::Button::Left => MouseEvent::LeftRelease,
@@ -205,20 +215,20 @@ pub mod macos {
                                     if let Err(e) = sender.send(mouse_event) {
                                         log::error!("Failed to send mouse release event: {}", e);
                                     }
-                                },
+                                }
                                 EventType::Wheel { delta_x, delta_y } => {
                                     let mouse_event = MouseEvent::Scroll { delta_x, delta_y };
 
                                     if let Err(e) = sender.send(mouse_event) {
                                         log::error!("Failed to send mouse scroll event: {}", e);
                                     }
-                                },
+                                }
                                 _ => {}
                             }
                         }
                     }
                 }
-                
+
                 if let Err(e) = listen(event_callback) {
                     log::error!("rdev listen error: {:?}", e);
                 }
