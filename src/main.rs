@@ -97,6 +97,11 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
+async fn start_sender(_: config::Config) -> anyhow::Result<()> {
+    todo!()
+}
+
+#[cfg(target_os = "linux")]
 async fn start_receiver(port: u16) -> anyhow::Result<()> {
     use tokio::sync::mpsc;
 
@@ -104,7 +109,7 @@ async fn start_receiver(port: u16) -> anyhow::Result<()> {
 
     let mut injector = injector::linux::LinuxInjector::new()?;
 
-    let network_receiver = network::NetworkReceiver::new(config.clone());
+    let network_receiver = network::NetworkReceiver::new(port);
 
     tokio::spawn(async move {
         if let Err(e) = network_receiver.start(network_tx).await {
