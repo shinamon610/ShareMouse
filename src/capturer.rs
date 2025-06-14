@@ -33,94 +33,243 @@ pub mod macos {
     use super::*;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use hidapi::HidApi;
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::event::{CGEvent, CGEventType, CGMouseButton};
+    use core_graphics::geometry::CGPoint;
+    use core_graphics::display::{CGDisplayShowCursor, CGWarpMouseCursorPosition};
+    use std::sync::Mutex;
     
     pub struct MacOSCapturer {
         is_running: Arc<AtomicBool>,
+        sender: Arc<Mutex<Option<mpsc::UnboundedSender<MouseEvent>>>>,
+        screen_center: CGPoint,
+        is_secondary_control: Arc<AtomicBool>, // Linux側を制御中かどうか
+        screen_width: f64,
+        screen_height: f64,
+        transfer_edge: String, // "left", "right", "top", "bottom"
     }
     
     impl MacOSCapturer {
-        pub fn new() -> Self {
+        pub fn new(screen_width: u32, screen_height: u32, transfer_edge: &str) -> Self {
+            let width = screen_width as f64;
+            let height = screen_height as f64;
             Self {
                 is_running: Arc::new(AtomicBool::new(false)),
+                sender: Arc::new(Mutex::new(None)),
+                screen_center: CGPoint::new(width / 2.0, height / 2.0),
+                is_secondary_control: Arc::new(AtomicBool::new(false)),
+                screen_width: width,
+                screen_height: height,
+                transfer_edge: transfer_edge.to_string(),
             }
         }
         
-        fn find_mouse_device(api: &HidApi) -> Option<hidapi::HidDevice> {
-            // HIDマウスデバイスを検索（Usage Page: 0x01, Usage: 0x02）
-            for device_info in api.device_list() {
-                if device_info.usage_page() == 0x01 && device_info.usage() == 0x02 {
-                    log::info!("Found mouse device: {:04x}:{:04x} - {}", 
-                              device_info.vendor_id(), device_info.product_id(),
-                              device_info.product_string().unwrap_or("Unknown"));
-                    
-                    if let Ok(device) = device_info.open_device(api) {
-                        return Some(device);
-                    }
+        // 制御モードを切り替える公開メソッド
+        pub fn set_secondary_control(&self, enable: bool) {
+            self.is_secondary_control.store(enable, Ordering::SeqCst);
+            if enable {
+                log::info!("Switching to secondary control mode (controlling Linux)");
+                unsafe {
+                    CGWarpMouseCursorPosition(self.screen_center);
                 }
+            } else {
+                log::info!("Switching to primary control mode (controlling macOS)");
             }
-            None
         }
     }
     
     impl MouseCapturer for MacOSCapturer {
         async fn start_capture(&self, sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
             self.is_running.store(true, Ordering::SeqCst);
+            log::info!("Starting macOS CGEvent-based mouse capture");
             
-            log::info!("Starting macOS mouse capture with HID API");
+            // アクセシビリティ権限をチェック
+            log::info!("Checking accessibility permissions...");
+            match CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
+                Ok(event_source) => {
+                    match CGEvent::new_mouse_event(
+                        event_source,
+                        CGEventType::MouseMoved,
+                        CGPoint::new(0.0, 0.0),
+                        CGMouseButton::Left,
+                    ) {
+                        Ok(_event) => {
+                            log::info!("Accessibility permissions OK");
+                        },
+                        Err(_) => {
+                            log::error!("Failed to create CGEvent - please grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility");
+                            return Err(anyhow::anyhow!("Accessibility permissions required"));
+                        }
+                    }
+                },
+                Err(_) => {
+                    log::error!("Failed to create CGEventSource - please grant accessibility permissions");
+                    return Err(anyhow::anyhow!("Accessibility permissions required"));
+                }
+            }
             
-            let api = HidApi::new()?;
-            let device = Self::find_mouse_device(&api)
-                .ok_or_else(|| anyhow::anyhow!("No mouse device found"))?;
+            // senderを保存
+            {
+                let mut sender_guard = self.sender.lock().unwrap();
+                *sender_guard = Some(sender);
+            }
             
-            device.set_blocking_mode(false)?;
+            // カーソを表示
+            unsafe {
+                CGDisplayShowCursor(0);
+            }
             
-            let mut virtual_x = 0.0f64;
-            let mut virtual_y = 0.0f64;
+            
+            let mut last_position = CGPoint::new(0.0, 0.0);
+            let mut virtual_x = 2560.0f64;
+            let mut virtual_y = 720.0f64;
+            
+            // 現在のマウス位置を取得する関数
+            let get_mouse_location = || -> CGPoint {
+                // Cocoa NSEventを使用してマウス位置を取得
+                use cocoa::appkit::NSEvent;
+                use cocoa::base::nil;
+                
+                unsafe {
+                    let mouse_location = NSEvent::mouseLocation(nil);
+                    let point = CGPoint::new(mouse_location.x, mouse_location.y);
+                    log::debug!("Got mouse position: ({:.1}, {:.1})", point.x, point.y);
+                    point
+                }
+            };
+            
+            last_position = get_mouse_location();
+            log::info!("Mouse capture started at position ({}, {})", last_position.x, last_position.y);
+            
+            let mut loop_count = 0;
             
             while self.is_running.load(Ordering::SeqCst) {
-                let mut buf = [0u8; 64];
-                match device.read(&mut buf) {
-                    Ok(size) if size > 0 => {
-                        // 標準的なマウスHIDレポート: [buttons, delta_x, delta_y, wheel]
-                        if size >= 3 {
-                            let delta_x = buf[1] as i8 as f64;
-                            let delta_y = buf[2] as i8 as f64;
-                            
-                            if delta_x != 0.0 || delta_y != 0.0 {
-                                virtual_x += delta_x;
-                                virtual_y += delta_y;
-                                
-                                log::debug!("HID mouse delta: ({}, {}), virtual: ({}, {})", 
-                                           delta_x, delta_y, virtual_x, virtual_y);
-                                
-                                let mouse_event = MouseEvent {
-                                    x: virtual_x,
-                                    y: virtual_y,
-                                    delta_x: Some(delta_x),
-                                    delta_y: Some(delta_y),
-                                    event_type: MouseEventType::Move,
-                                };
-                                
-                                if sender.send(mouse_event).is_err() {
+                loop_count += 1;
+                
+                if loop_count % 1000 == 0 {
+                    log::debug!("CGEvent polling iteration: {}", loop_count);
+                }
+                
+                let current_position = get_mouse_location();
+                
+                if self.is_secondary_control.load(Ordering::SeqCst) {
+                    // Linux側制御中：移動量を計算してLinux側に送信
+                    let delta_x = current_position.x - self.screen_center.x;
+                    let delta_y = current_position.y - self.screen_center.y;
+                    
+                    if delta_x.abs() > 2.0 || delta_y.abs() > 2.0 {
+                        // 仮想座標更新
+                        virtual_x += delta_x;
+                        virtual_y += delta_y;
+                        
+                        log::info!("Secondary control: delta=({:.1}, {:.1}), virtual=({:.1}, {:.1})", 
+                                  delta_x, delta_y, virtual_x, virtual_y);
+                        
+                        let mouse_event = MouseEvent {
+                            x: virtual_x,
+                            y: virtual_y,
+                            delta_x: Some(delta_x),
+                            delta_y: Some(delta_y),
+                            event_type: MouseEventType::Move,
+                        };
+                        
+                        if let Ok(sender_guard) = self.sender.lock() {
+                            if let Some(sender_ref) = sender_guard.as_ref() {
+                                if sender_ref.send(mouse_event).is_err() {
                                     log::error!("Failed to send mouse event");
                                     break;
                                 }
                             }
                         }
+                        
+                        // マウスを中央に戻す
+                        unsafe {
+                            CGWarpMouseCursorPosition(self.screen_center);
+                        }
                     }
-                    Ok(_) => {
-                        // データなし、少し待つ
-                        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-                    }
-                    Err(e) => {
-                        log::warn!("HID read error: {}", e);
-                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                } else {
+                    // macOS側制御中：通常のマウス移動
+                    let delta_x = current_position.x - last_position.x;
+                    let delta_y = current_position.y - last_position.y;
+                    
+                    if delta_x.abs() > 0.5 || delta_y.abs() > 0.5 {
+                        // 画面端検知（設定に基づく端での移譲）
+                        let at_edge = match self.transfer_edge.as_str() {
+                            "left" => current_position.x <= 1.0,
+                            "right" => current_position.x >= self.screen_width - 1.0,
+                            "top" => current_position.y <= 1.0,
+                            "bottom" => current_position.y >= self.screen_height - 1.0,
+                            _ => false,
+                        };
+                        
+                        if at_edge {
+                            log::info!("Reached {} edge at ({:.1}, {:.1}), switching to secondary control", 
+                                     self.transfer_edge, current_position.x, current_position.y);
+                            self.is_secondary_control.store(true, Ordering::SeqCst);
+                            
+                            // マウスを中央に移動
+                            unsafe {
+                                CGWarpMouseCursorPosition(self.screen_center);
+                            }
+                            
+                            // 仮想座標を更新（レイアウトに基づく）
+                            match self.transfer_edge.as_str() {
+                                "left" => {
+                                    virtual_x = self.screen_width; // リモート画面の開始位置
+                                    virtual_y = current_position.y;
+                                },
+                                "right" => {
+                                    virtual_x = self.screen_width;
+                                    virtual_y = current_position.y;
+                                },
+                                "top" => {
+                                    virtual_x = current_position.x;
+                                    virtual_y = self.screen_height;
+                                },
+                                "bottom" => {
+                                    virtual_x = current_position.x;
+                                    virtual_y = self.screen_height;
+                                },
+                                _ => {}
+                            }
+                            
+                            log::info!("Switched to secondary control, virtual position: ({:.1}, {:.1})", virtual_x, virtual_y);
+                            continue; // この回はイベント送信をスキップ
+                        }
+                        
+                        // 通常のmacOS側移動
+                        virtual_x = current_position.x;
+                        virtual_y = current_position.y;
+                        
+                        log::debug!("Primary control: position=({:.1}, {:.1}), virtual=({:.1}, {:.1})", 
+                                   current_position.x, current_position.y, virtual_x, virtual_y);
+                        
+                        let mouse_event = MouseEvent {
+                            x: virtual_x,
+                            y: virtual_y,
+                            delta_x: Some(delta_x),
+                            delta_y: Some(delta_y),
+                            event_type: MouseEventType::Move,
+                        };
+                        
+                        if let Ok(sender_guard) = self.sender.lock() {
+                            if let Some(sender_ref) = sender_guard.as_ref() {
+                                if sender_ref.send(mouse_event).is_err() {
+                                    log::error!("Failed to send mouse event");
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        last_position = current_position;
                     }
                 }
+                
+                // 短い間隔でポーリング
+                tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
             }
             
-            log::info!("Mouse capture stopped");
+            log::info!("CGEvent mouse capture stopped");
             Ok(())
         }
         

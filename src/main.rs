@@ -87,7 +87,16 @@ async fn start_sender(config: config::Config) -> anyhow::Result<()> {
     let virtual_mouse: SharedVirtualMouse = Arc::new(Mutex::new(VirtualMouse::new(&config)));
     
     #[cfg(target_os = "macos")]
-    let capturer = capturer::macos::MacOSCapturer::new();
+    let capturer = capturer::macos::MacOSCapturer::new(
+        config.screen.width, 
+        config.screen.height, 
+        match config.edge.sender_to_receiver {
+            config::EdgeDirection::Left => "left",
+            config::EdgeDirection::Right => "right",
+            config::EdgeDirection::Top => "top",
+            config::EdgeDirection::Bottom => "bottom",
+        }
+    );
     
     #[cfg(target_os = "linux")]
     let capturer = capturer::linux::LinuxCapturer::new("/dev/input/event0", config.screen.width, config.screen.height);
