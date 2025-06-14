@@ -12,6 +12,7 @@ struct GlobalState {
     virtual_model: Option<SharedVirtualModel>,
     sender: Option<mpsc::UnboundedSender<MouseEvent>>,
     is_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    config: Option<Config>,
 }
 
 static GLOBAL_STATE: StdMutex<Option<GlobalState>> = StdMutex::new(None);
@@ -48,7 +49,7 @@ pub mod macos {
         }
 
         /// マウスを画面中央に固定する関数
-        pub fn warp_to_center(&self, config: Config) -> Result<()> {
+        pub fn warp_to_center(&self, config: &Config) -> Result<()> {
             let (center_x, center_y) = config.host_center();
             let center_point = CGPoint::new(center_x, center_y);
 
@@ -147,6 +148,7 @@ pub mod macos {
                     virtual_model: Some(virtual_model.clone()),
                     sender: Some(sender.clone()),
                     is_running: self.is_running.clone(),
+                    config: Some(config.clone()),
                 });
             }
 
@@ -161,29 +163,31 @@ pub mod macos {
                             return;
                         }
 
-                        if let (Some(vm), Some(sender)) =
-                            (state.virtual_model.as_ref(), state.sender.as_ref())
-                        {
+                        if let (Some(vm), Some(sender), Some(config)) = (
+                            state.virtual_model.as_ref(),
+                            state.sender.as_ref(),
+                            state.config.as_ref(),
+                        ) {
                             match event.event_type {
                                 EventType::MouseMove { x, y } => {
                                     log::debug!("Mouse moved to: ({}, {})", x, y);
 
                                     // VirtualModelを更新
                                     if let Ok(mut vm) = vm.lock() {
-                                        vm.virtual_x = x;
-                                        vm.virtual_y = y;
+                                        vm.update(config, x, y);
                                         log::debug!(
                                             "VirtualModel updated: ({}, {})",
                                             vm.virtual_x,
                                             vm.virtual_y
                                         );
-                                    }
+                                        if vm.in_host(config) {
+                                            // MouseEventを送信
+                                            let mouse_event = MouseEvent::Move { x, y };
 
-                                    // MouseEventを送信
-                                    let mouse_event = MouseEvent::Move { x, y };
-
-                                    if let Err(e) = sender.send(mouse_event) {
-                                        log::error!("Failed to send mouse event: {}", e);
+                                            if let Err(e) = sender.send(mouse_event) {
+                                                log::error!("Failed to send mouse event: {}", e);
+                                            }
+                                        }
                                     }
                                 }
                                 EventType::ButtonPress(button) => {

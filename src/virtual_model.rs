@@ -12,6 +12,13 @@ fn inner_crop(target: f64, max: f64) -> f64 {
     target.max(0.0).min(max)
 }
 
+fn local_x_to_virtual(config: &Config, x: f64) -> f64 {
+    if config.host_position == HostPosition::Right {
+        return config.remote_screen.width as f64 + x;
+    }
+    return x;
+}
+
 impl VirtualModel {
     pub fn new() -> Self {
         Self {
@@ -20,12 +27,7 @@ impl VirtualModel {
         }
     }
     pub fn init(&mut self, config: &Config, x: f64, y: f64) {
-        self.virtual_x = if config.host_position == HostPosition::Right {
-            x + config.remote_screen.width as f64
-        } else {
-            x
-        };
-
+        self.virtual_x = local_x_to_virtual(config, x);
         self.virtual_y = y;
     }
     pub fn in_host(&self, config: &Config) -> bool {
@@ -41,7 +43,7 @@ impl VirtualModel {
     }
     pub fn update(&mut self, config: &Config, x: f64, y: f64) {
         if self.in_host(config) {
-            self.virtual_x = x;
+            self.virtual_x = local_x_to_virtual(config, x);
             self.virtual_y = y;
             return;
         }
@@ -52,6 +54,7 @@ impl VirtualModel {
         self.virtual_x = n_x;
         self.virtual_y = n_y;
     }
+    pub fn receiver_position(&self, config: &Config) -> (f64, f64) {}
 }
 
 /// スレッドセーフなVirtualModel
