@@ -132,11 +132,14 @@ pub mod linux {
             
             match event.event_type {
                 MouseEventType::Move => {
-                    // 移動量がある場合は相対移動、そうでなければ絶対移動
+                    // 移動量がある場合は相対移動、有効座標の場合のみ絶対移動
                     if let (Some(dx), Some(dy)) = (event.delta_x, event.delta_y) {
                         self.move_cursor_relative_wayland(dx as i32, dy as i32)?;
-                    } else {
+                    } else if event.x >= 0.0 && event.y >= 0.0 {
+                        // 有効座標のみ絶対移動（負の値は無効座標として無視）
                         self.move_cursor_wayland(event.x as i32, event.y as i32)?;
+                    } else {
+                        log::debug!("Ignoring invalid coordinates ({}, {})", event.x, event.y);
                     }
                 }
                 MouseEventType::LeftClick => {

@@ -158,10 +158,10 @@ pub mod macos {
                     let delta_y = current_position.y - self.screen_center.y;
                     
                     if delta_x.abs() > 2.0 || delta_y.abs() > 2.0 {
-                        // Linux側には移動量のみ送信（座標は無関係）
+                        // Linux側には移動量のみ送信（座標は無効値）
                         let mouse_event = MouseEvent {
-                            x: 0.0,  // 座標は無視
-                            y: 0.0,  // 座標は無視
+                            x: -1.0,  // 無効座標（絶対移動を無視させる）
+                            y: -1.0,  // 無効座標（絶対移動を無視させる）
                             delta_x: Some(delta_x),
                             delta_y: Some(delta_y),
                             event_type: MouseEventType::Move,
