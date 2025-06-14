@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::config::Config;
+use crate::config::{Config, HostPosition};
 
 /// 仮想マウスモデル - virtual_xとvirtual_yを管理
 pub struct VirtualModel {
@@ -19,6 +19,12 @@ impl VirtualModel {
     pub fn init(&mut self, x: f64, y: f64) {
         self.virtual_x = x;
         self.virtual_y = y;
+    }
+    pub fn in_host(&self) -> bool {
+        if self.config.host_position == HostPosition::Right {
+            return self.config.remote_screen.width as f64 <= self.virtual_x;
+        }
+        return self.config.screen.width as f64 <= self.virtual_x;
     }
 }
 
