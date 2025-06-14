@@ -8,7 +8,7 @@ pub trait MouseInjector {
 #[cfg(target_os = "macos")]
 pub mod macos {
     use super::*;
-    use crate::event::{MouseEvent, MouseEventType};
+    use crate::event::MouseEvent;
     use core_graphics::event::{
         CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField,
     };
@@ -29,70 +29,113 @@ pub mod macos {
 
     impl MouseInjector for MacOSInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
-            let location = CGPoint::new(event.x, event.y);
-
-            let cg_event = match event.event_type {
-                MouseEventType::Move => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::MouseMoved,
-                    location,
-                    CGMouseButton::Left,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create mouse move event"))?,
-                MouseEventType::LeftClick => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::LeftMouseDown,
-                    location,
-                    CGMouseButton::Left,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create left click event"))?,
-                MouseEventType::LeftRelease => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::LeftMouseUp,
-                    location,
-                    CGMouseButton::Left,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create left release event"))?,
-                MouseEventType::RightClick => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::RightMouseDown,
-                    location,
-                    CGMouseButton::Right,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create right click event"))?,
-                MouseEventType::RightRelease => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::RightMouseUp,
-                    location,
-                    CGMouseButton::Right,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create right release event"))?,
-                MouseEventType::MiddleClick => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::OtherMouseDown,
-                    location,
-                    CGMouseButton::Center,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create middle click event"))?,
-                MouseEventType::MiddleRelease => CGEvent::new_mouse_event(
-                    self.event_source.clone(),
-                    CGEventType::OtherMouseUp,
-                    location,
-                    CGMouseButton::Center,
-                )
-                .map_err(|_| anyhow::anyhow!("Failed to create middle release event"))?,
-                MouseEventType::ScrollUp => {
-                    let event = CGEvent::new(self.event_source.clone())
-                        .map_err(|_| anyhow::anyhow!("Failed to create scroll event"))?;
-                    event.set_type(CGEventType::ScrollWheel);
-                    event.set_integer_value_field(EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1, 1);
-                    event
+            let cg_event = match event {
+                MouseEvent::Move { x, y } => {
+                    let location = CGPoint::new(x, y);
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::MouseMoved,
+                        location,
+                        CGMouseButton::Left,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create mouse move event"))?
                 }
-                MouseEventType::ScrollDown => {
+                MouseEvent::LeftClick => {
+                    // クリック時は現在のマウス位置を使用
+                    let current_pos = unsafe {
+                        use cocoa::appkit::NSEvent;
+                        use cocoa::base::nil;
+                        let location = NSEvent::mouseLocation(nil);
+                        CGPoint::new(location.x, location.y)
+                    };
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::LeftMouseDown,
+                        current_pos,
+                        CGMouseButton::Left,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create left click event"))?
+                }
+                MouseEvent::LeftRelease => {
+                    let current_pos = unsafe {
+                        use cocoa::appkit::NSEvent;
+                        use cocoa::base::nil;
+                        let location = NSEvent::mouseLocation(nil);
+                        CGPoint::new(location.x, location.y)
+                    };
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::LeftMouseUp,
+                        current_pos,
+                        CGMouseButton::Left,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create left release event"))?
+                }
+                MouseEvent::RightClick => {
+                    let current_pos = unsafe {
+                        use cocoa::appkit::NSEvent;
+                        use cocoa::base::nil;
+                        let location = NSEvent::mouseLocation(nil);
+                        CGPoint::new(location.x, location.y)
+                    };
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::RightMouseDown,
+                        current_pos,
+                        CGMouseButton::Right,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create right click event"))?
+                }
+                MouseEvent::RightRelease => {
+                    let current_pos = unsafe {
+                        use cocoa::appkit::NSEvent;
+                        use cocoa::base::nil;
+                        let location = NSEvent::mouseLocation(nil);
+                        CGPoint::new(location.x, location.y)
+                    };
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::RightMouseUp,
+                        current_pos,
+                        CGMouseButton::Right,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create right release event"))?
+                }
+                MouseEvent::MiddleClick => {
+                    let current_pos = unsafe {
+                        use cocoa::appkit::NSEvent;
+                        use cocoa::base::nil;
+                        let location = NSEvent::mouseLocation(nil);
+                        CGPoint::new(location.x, location.y)
+                    };
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::OtherMouseDown,
+                        current_pos,
+                        CGMouseButton::Center,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create middle click event"))?
+                }
+                MouseEvent::MiddleRelease => {
+                    let current_pos = unsafe {
+                        use cocoa::appkit::NSEvent;
+                        use cocoa::base::nil;
+                        let location = NSEvent::mouseLocation(nil);
+                        CGPoint::new(location.x, location.y)
+                    };
+                    CGEvent::new_mouse_event(
+                        self.event_source.clone(),
+                        CGEventType::OtherMouseUp,
+                        current_pos,
+                        CGMouseButton::Center,
+                    )
+                    .map_err(|_| anyhow::anyhow!("Failed to create middle release event"))?
+                }
+                MouseEvent::Scroll { delta_x: _, delta_y } => {
                     let event = CGEvent::new(self.event_source.clone())
                         .map_err(|_| anyhow::anyhow!("Failed to create scroll event"))?;
                     event.set_type(CGEventType::ScrollWheel);
-                    event.set_integer_value_field(EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1, -1);
+                    event.set_integer_value_field(EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1, delta_y);
                     event
                 }
             };
@@ -106,7 +149,7 @@ pub mod macos {
 #[cfg(target_os = "linux")]
 pub mod linux {
     use super::*;
-    use crate::event::{MouseEvent, MouseEventType};
+    use crate::event::MouseEvent;
     use std::process::Command;
 
     pub struct LinuxInjector;
@@ -129,45 +172,39 @@ pub mod linux {
 
     impl MouseInjector for LinuxInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
-            log::info!(
-                "Injecting event: {:?} at ({}, {})",
-                event.event_type,
-                event.x,
-                event.y,
-            );
+            log::info!("Injecting event: {:?}", event);
 
-            match event.event_type {
-                MouseEventType::Move => {
+            match event {
+                MouseEvent::Move { x, y } => {
                     // 絶対移動のみ対応
-                    if event.x >= 0.0 && event.y >= 0.0 {
-                        self.move_cursor_wayland(event.x as i32, event.y as i32)?;
+                    if x >= 0.0 && y >= 0.0 {
+                        self.move_cursor_wayland(x as i32, y as i32)?;
                     } else {
-                        log::debug!("Ignoring invalid coordinates ({}, {})", event.x, event.y);
+                        log::debug!("Ignoring invalid coordinates ({}, {})", x, y);
                     }
                 }
-                MouseEventType::LeftClick => {
+                MouseEvent::LeftClick => {
                     self.click_wayland(1, true)?;
                 }
-                MouseEventType::LeftRelease => {
+                MouseEvent::LeftRelease => {
                     self.click_wayland(1, false)?;
                 }
-                MouseEventType::RightClick => {
+                MouseEvent::RightClick => {
                     self.click_wayland(3, true)?;
                 }
-                MouseEventType::RightRelease => {
+                MouseEvent::RightRelease => {
                     self.click_wayland(3, false)?;
                 }
-                MouseEventType::MiddleClick => {
+                MouseEvent::MiddleClick => {
                     self.click_wayland(2, true)?;
                 }
-                MouseEventType::MiddleRelease => {
+                MouseEvent::MiddleRelease => {
                     self.click_wayland(2, false)?;
                 }
-                MouseEventType::ScrollUp => {
-                    self.scroll_wayland(1)?;
-                }
-                MouseEventType::ScrollDown => {
-                    self.scroll_wayland(-1)?;
+                MouseEvent::Scroll { delta_x: _, delta_y } => {
+                    // delta_yが正の場合は上スクロール、負の場合は下スクロール
+                    let direction = if delta_y > 0 { 1 } else { -1 };
+                    self.scroll_wayland(direction)?;
                 }
             }
 

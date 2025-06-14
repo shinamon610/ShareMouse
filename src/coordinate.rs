@@ -155,9 +155,9 @@ impl CoordinateTransformer {
 
 impl From<MouseEvent> for LocalCoordinate {
     fn from(event: MouseEvent) -> Self {
-        Self {
-            x: event.x,
-            y: event.y,
+        match event {
+            MouseEvent::Move { x, y } => Self { x, y },
+            _ => Self { x: 0.0, y: 0.0 }, // デフォルト値を使用（クリックなどの場合）
         }
     }
 }

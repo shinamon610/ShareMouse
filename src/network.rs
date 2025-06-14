@@ -29,12 +29,7 @@ impl NetworkSender {
         );
 
         while let Some(event) = receiver.recv().await {
-            log::info!(
-                "NetworkSender received event: {:?} at ({}, {})",
-                event.event_type,
-                event.x,
-                event.y
-            );
+            log::info!("NetworkSender received event: {:?}", event);
             let data = bincode::serialize(&event)?;
             match socket.send_to(&data, remote_addr).await {
                 Ok(bytes_sent) => {

@@ -1,21 +1,13 @@
 use serde::{Deserialize, Serialize};
-#[derive(Debug, Clone, Serialize, Deserialize)]
-
-pub struct MouseEvent {
-    pub x: f64,
-    pub y: f64,
-    pub event_type: MouseEventType,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MouseEventType {
-    Move,
+pub enum MouseEvent {
+    Move { x: f64, y: f64 },
     LeftClick,
     RightClick,
     MiddleClick,
     LeftRelease,
     RightRelease,
     MiddleRelease,
-    ScrollUp,
-    ScrollDown,
+    Scroll { delta_x: i64, delta_y: i64 },
 }

@@ -1,5 +1,4 @@
 use crate::event::MouseEvent;
-use crate::event::MouseEventType;
 use crate::virtual_model::SharedVirtualModel;
 use anyhow::Result;
 use tokio::sync::mpsc;
@@ -177,73 +176,41 @@ pub mod macos {
                                     }
 
                                     // MouseEventを送信
-                                    let mouse_event = MouseEvent {
-                                        x,
-                                        y,
-                                        event_type: MouseEventType::Move,
-                                    };
+                                    let mouse_event = MouseEvent::Move { x, y };
 
                                     if let Err(e) = sender.send(mouse_event) {
                                         log::error!("Failed to send mouse event: {}", e);
                                     }
                                 },
                                 EventType::ButtonPress(button) => {
-                                    if let Ok(vm) = vm.lock() {
-                                        let event_type = match button {
-                                            rdev::Button::Left => MouseEventType::LeftClick,
-                                            rdev::Button::Right => MouseEventType::RightClick,
-                                            rdev::Button::Middle => MouseEventType::MiddleClick,
-                                            _ => return,
-                                        };
+                                    let mouse_event = match button {
+                                        rdev::Button::Left => MouseEvent::LeftClick,
+                                        rdev::Button::Right => MouseEvent::RightClick,
+                                        rdev::Button::Middle => MouseEvent::MiddleClick,
+                                        _ => return,
+                                    };
 
-                                        let mouse_event = MouseEvent {
-                                            x: vm.virtual_x,
-                                            y: vm.virtual_y,
-                                            event_type,
-                                        };
-
-                                        if let Err(e) = sender.send(mouse_event) {
-                                            log::error!("Failed to send mouse click event: {}", e);
-                                        }
+                                    if let Err(e) = sender.send(mouse_event) {
+                                        log::error!("Failed to send mouse click event: {}", e);
                                     }
                                 },
                                 EventType::ButtonRelease(button) => {
-                                    if let Ok(vm) = vm.lock() {
-                                        let event_type = match button {
-                                            rdev::Button::Left => MouseEventType::LeftRelease,
-                                            rdev::Button::Right => MouseEventType::RightRelease,
-                                            rdev::Button::Middle => MouseEventType::MiddleRelease,
-                                            _ => return,
-                                        };
+                                    let mouse_event = match button {
+                                        rdev::Button::Left => MouseEvent::LeftRelease,
+                                        rdev::Button::Right => MouseEvent::RightRelease,
+                                        rdev::Button::Middle => MouseEvent::MiddleRelease,
+                                        _ => return,
+                                    };
 
-                                        let mouse_event = MouseEvent {
-                                            x: vm.virtual_x,
-                                            y: vm.virtual_y,
-                                            event_type,
-                                        };
-
-                                        if let Err(e) = sender.send(mouse_event) {
-                                            log::error!("Failed to send mouse release event: {}", e);
-                                        }
+                                    if let Err(e) = sender.send(mouse_event) {
+                                        log::error!("Failed to send mouse release event: {}", e);
                                     }
                                 },
-                                EventType::Wheel { delta_x: _, delta_y } => {
-                                    if let Ok(vm) = vm.lock() {
-                                        let event_type = if delta_y > 0 {
-                                            MouseEventType::ScrollUp
-                                        } else {
-                                            MouseEventType::ScrollDown
-                                        };
+                                EventType::Wheel { delta_x, delta_y } => {
+                                    let mouse_event = MouseEvent::Scroll { delta_x, delta_y };
 
-                                        let mouse_event = MouseEvent {
-                                            x: vm.virtual_x,
-                                            y: vm.virtual_y,
-                                            event_type,
-                                        };
-
-                                        if let Err(e) = sender.send(mouse_event) {
-                                            log::error!("Failed to send mouse scroll event: {}", e);
-                                        }
+                                    if let Err(e) = sender.send(mouse_event) {
+                                        log::error!("Failed to send mouse scroll event: {}", e);
                                     }
                                 },
                                 _ => {}
