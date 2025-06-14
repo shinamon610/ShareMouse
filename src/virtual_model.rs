@@ -6,7 +6,6 @@ use crate::config::Config;
 pub struct VirtualModel {
     pub virtual_x: f64,
     pub virtual_y: f64,
-    pub is_init: bool,
     pub config: Config,
 }
 impl VirtualModel {
@@ -14,9 +13,12 @@ impl VirtualModel {
         Self {
             virtual_x: 0.0,
             virtual_y: 0.0,
-            is_init: true,
             config: config,
         }
+    }
+    pub fn init(&mut self, x: f64, y: f64) {
+        self.virtual_x = x;
+        self.virtual_y = y;
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::event::MouseEvent;
 use crate::event::MouseEventType;
+use crate::virtual_model::SharedVirtualModel;
 use anyhow::Result;
 use tokio::sync::mpsc;
 
@@ -7,7 +8,7 @@ pub trait MouseCapturer {
     async fn start_capture_with_model(
         &self,
         sender: mpsc::UnboundedSender<MouseEvent>,
-        virtual_model: crate::virtual_model::SharedVirtualModel,
+        virtual_model: SharedVirtualModel,
     ) -> Result<()>;
 }
 
@@ -31,13 +32,58 @@ pub mod macos {
                 is_running: Arc::new(AtomicBool::new(false)),
             }
         }
+
+        /// マウスを画面中央に固定する関数
+        pub fn warp_to_center(&self) -> Result<()> {
+            use core_graphics::display::CGMainDisplayID;
+
+            let (_, display_bounds) = unsafe {
+                let display_id = CGMainDisplayID();
+                let display_bounds = core_graphics::display::CGDisplayBounds(display_id);
+                (display_id, display_bounds)
+            };
+
+            let center_x = display_bounds.origin.x + display_bounds.size.width / 2.0;
+            let center_y = display_bounds.origin.y + display_bounds.size.height / 2.0;
+
+            let center_point = CGPoint::new(center_x, center_y);
+
+            match CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
+                Ok(event_source) => {
+                    match CGEvent::new_mouse_event(
+                        event_source,
+                        CGEventType::MouseMoved,
+                        center_point,
+                        CGMouseButton::Left,
+                    ) {
+                        Ok(event) => {
+                            event.post(core_graphics::event::CGEventTapLocation::HID);
+                            log::debug!(
+                                "Mouse warped to center: ({:.1}, {:.1})",
+                                center_x,
+                                center_y
+                            );
+                            Ok(())
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create mouse event: {:?}", e);
+                            Err(anyhow::anyhow!("Failed to create mouse event"))
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to create event source: {:?}", e);
+                    Err(anyhow::anyhow!("Failed to create event source"))
+                }
+            }
+        }
     }
 
     impl MouseCapturer for MacOSCapturer {
         async fn start_capture_with_model(
             &self,
             sender: mpsc::UnboundedSender<MouseEvent>,
-            virtual_model: crate::virtual_model::SharedVirtualModel,
+            virtual_model: SharedVirtualModel,
         ) -> Result<()> {
             self.is_running.store(true, Ordering::SeqCst);
             log::info!("Starting macOS mouse capture with VirtualModel");
@@ -83,11 +129,15 @@ pub mod macos {
             };
 
             let mut last_position = get_mouse_location();
-            log::info!(
-                "Mouse capture at position ({}, {})",
-                last_position.x,
-                last_position.y
-            );
+            {
+                log::info!(
+                    "Mouse capture at position ({}, {})",
+                    last_position.x,
+                    last_position.y
+                );
+                let mut locked = virtual_model.lock().unwrap();
+                locked.init(last_position.x, last_position.y);
+            }
 
             while self.is_running.load(Ordering::SeqCst) {
                 let current_position = get_mouse_location();
@@ -127,6 +177,7 @@ pub mod macos {
 
                     last_position = current_position;
                 }
+                self.warp_to_center().unwrap();
 
                 tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
             }
