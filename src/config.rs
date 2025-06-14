@@ -1,11 +1,10 @@
-use serde::{Deserialize, Serialize};
-use std::path::Path;
-use std::fs;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
-    pub mode: Mode,
     pub remote_ip: String,
     pub remote_port: u16,
     pub screen: Screen,
@@ -72,11 +71,10 @@ impl Config {
         let config: Config = serde_yaml::from_str(&content)?;
         Ok(config)
     }
-    
+
     pub fn create_template<P: AsRef<Path>>(path: P) -> Result<()> {
         let template = Config {
-            mode: Mode::Sender,
-            remote_ip: "100.64.1.79".to_string(),
+            remote_ip: "000".to_string(),
             remote_port: 5000,
             screen: Screen {
                 width: 2600,
@@ -97,7 +95,7 @@ impl Config {
             protocol: Protocol::Udp,
             buffer_size: 4096,
         };
-        
+
         let yaml = serde_yaml::to_string(&template)?;
         fs::write(path, yaml)?;
         Ok(())
