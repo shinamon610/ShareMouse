@@ -106,7 +106,7 @@ pub mod macos {
 #[cfg(target_os = "linux")]
 pub mod linux {
     use super::*;
-    use crate::capturer::{MouseEvent, MouseEventType};
+    use crate::event::{MouseEvent, MouseEventType};
     use std::process::Command;
 
     pub struct LinuxInjector;
@@ -130,12 +130,10 @@ pub mod linux {
     impl MouseInjector for LinuxInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
             log::info!(
-                "Injecting event: {:?} at ({}, {}) with delta ({:?}, {:?})",
+                "Injecting event: {:?} at ({}, {})",
                 event.event_type,
                 event.x,
                 event.y,
-                event.delta_x,
-                event.delta_y
             );
 
             match event.event_type {
