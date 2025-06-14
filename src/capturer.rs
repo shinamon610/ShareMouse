@@ -180,10 +180,9 @@ pub mod macos {
                                             vm.virtual_x,
                                             vm.virtual_y
                                         );
-                                        if vm.in_host(config) {
-                                            // MouseEventを送信
+                                        if !vm.in_host(config) {
+                                            let (x, y) = vm.receiver_position(config);
                                             let mouse_event = MouseEvent::Move { x, y };
-
                                             if let Err(e) = sender.send(mouse_event) {
                                                 log::error!("Failed to send mouse event: {}", e);
                                             }

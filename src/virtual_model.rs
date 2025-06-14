@@ -54,7 +54,13 @@ impl VirtualModel {
         self.virtual_x = n_x;
         self.virtual_y = n_y;
     }
-    pub fn receiver_position(&self, config: &Config) -> (f64, f64) {}
+    pub fn receiver_position(&self, config: &Config) -> (f64, f64) {
+        if config.host_position == HostPosition::Right {
+            (self.virtual_x, self.virtual_y)
+        } else {
+            (self.virtual_x - config.screen.width as f64, self.virtual_y)
+        }
+    }
 }
 
 /// スレッドセーフなVirtualModel
