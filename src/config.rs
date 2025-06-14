@@ -18,7 +18,7 @@ pub struct Screen {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum HostPosition {
     Left,
