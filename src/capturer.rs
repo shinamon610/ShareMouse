@@ -4,7 +4,11 @@ use anyhow::Result;
 use tokio::sync::mpsc;
 
 pub trait MouseCapturer {
-    async fn start_capture(&self, sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()>;
+    async fn start_capture_with_model(
+        &self,
+        sender: mpsc::UnboundedSender<MouseEvent>,
+        virtual_model: crate::virtual_model::SharedVirtualModel,
+    ) -> Result<()>;
     fn stop_capture(&self) -> Result<()>;
 }
 
@@ -20,26 +24,24 @@ pub mod macos {
 
     pub struct MacOSCapturer {
         is_running: Arc<AtomicBool>,
-        screen_width: f64,
-        screen_height: f64,
-        transfer_edge: String,
     }
 
     impl MacOSCapturer {
-        pub fn new(screen_width: u32, screen_height: u32, transfer_edge: &str) -> Self {
+        pub fn new() -> Self {
             Self {
                 is_running: Arc::new(AtomicBool::new(false)),
-                screen_width: screen_width as f64,
-                screen_height: screen_height as f64,
-                transfer_edge: transfer_edge.to_string(),
             }
         }
     }
 
     impl MouseCapturer for MacOSCapturer {
-        async fn start_capture(&self, sender: mpsc::UnboundedSender<MouseEvent>) -> Result<()> {
+        async fn start_capture_with_model(
+            &self,
+            sender: mpsc::UnboundedSender<MouseEvent>,
+            virtual_model: crate::virtual_model::SharedVirtualModel,
+        ) -> Result<()> {
             self.is_running.store(true, Ordering::SeqCst);
-            log::info!("Starting macOS CGEvent-based mouse capture");
+            log::info!("Starting macOS mouse capture with VirtualModel");
 
             // アクセシビリティ権限をチェック
             log::info!("Checking accessibility permissions...");
@@ -55,7 +57,9 @@ pub mod macos {
                             log::info!("Accessibility permissions OK");
                         }
                         Err(_) => {
-                            log::error!("Failed to create CGEvent - please grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility");
+                            log::error!(
+                                "Failed to create CGEvent - please grant accessibility permissions"
+                            );
                             return Err(anyhow::anyhow!("Accessibility permissions required"));
                         }
                     }
@@ -81,7 +85,7 @@ pub mod macos {
 
             let mut last_position = get_mouse_location();
             log::info!(
-                "Mouse capture started at position ({}, {})",
+                "Mouse capture with VirtualModel started at position ({}, {})",
                 last_position.x,
                 last_position.y
             );
@@ -89,30 +93,25 @@ pub mod macos {
             while self.is_running.load(Ordering::SeqCst) {
                 let current_position = get_mouse_location();
 
-                // 相対移動量を計算（取得するが使用しない）
+                // 相対移動量を計算
                 let delta_x = current_position.x - last_position.x;
                 let delta_y = current_position.y - last_position.y;
 
                 // 移動があった場合のみ処理
                 if delta_x.abs() > 0.1 || delta_y.abs() > 0.1 {
-                    // 絶対座標を送信
-                    let mouse_event = MouseEvent {
-                        x: current_position.x,
-                        y: current_position.y,
-                        event_type: MouseEventType::Move,
-                    };
-
                     log::debug!(
-                        "Sending absolute position: ({:.1}, {:.1}), delta: ({:.1}, {:.1})",
+                        "Mouse moved: position=({:.1}, {:.1}), delta=({:.1}, {:.1})",
                         current_position.x,
                         current_position.y,
                         delta_x,
                         delta_y
                     );
 
-                    if sender.send(mouse_event).is_err() {
-                        log::error!("Failed to send mouse event");
-                        break;
+                    // VirtualModelを直接更新
+                    if let Ok(mut vm) = virtual_model.lock() {
+                        vm.virtual_x = current_position.x;
+                        vm.virtual_y = current_position.y;
+                        log::debug!("VirtualModel updated: ({}, {})", vm.virtual_x, vm.virtual_y);
                     }
 
                     last_position = current_position;
@@ -121,7 +120,7 @@ pub mod macos {
                 tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
             }
 
-            log::info!("CGEvent mouse capture stopped");
+            log::info!("Mouse capture with VirtualModel stopped");
             Ok(())
         }
 

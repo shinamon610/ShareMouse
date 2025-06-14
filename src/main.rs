@@ -10,7 +10,9 @@ mod coordinate;
 mod event;
 mod injector;
 mod network;
+mod virtual_model;
 
+use virtual_model::{SharedVirtualModel, VirtualModel};
 #[derive(Parser)]
 #[command(name = "sharemouse")]
 #[command(about = "A lightweight mouse sharing tool for macOS and Linux")]
@@ -66,25 +68,22 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(target_os = "macos")]
 async fn start_sender(config: config::Config) -> anyhow::Result<()> {
+    use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
+
+    let virtual_model: SharedVirtualModel = Arc::new(Mutex::new(VirtualModel::new(config.clone())));
 
     let (network_tx, network_rx) = mpsc::unbounded_channel();
 
-    let capturer = capturer::macos::MacOSCapturer::new(
-        config.screen.width,
-        config.screen.height,
-        match config.edge.sender_to_receiver {
-            config::EdgeDirection::Left => "left",
-            config::EdgeDirection::Right => "right",
-            config::EdgeDirection::Top => "top",
-            config::EdgeDirection::Bottom => "bottom",
-        },
-    );
+    let capturer = capturer::macos::MacOSCapturer::new();
 
     let network_sender = network::NetworkSender::new(config.clone());
 
     tokio::spawn(async move {
-        if let Err(e) = capturer.start_capture(network_tx).await {
+        if let Err(e) = capturer
+            .start_capture_with_model(network_tx, virtual_model)
+            .await
+        {
             error!("Capture error: {}", e);
         }
     });
