@@ -1,5 +1,5 @@
+use crate::event::MouseEvent;
 use anyhow::Result;
-use crate::capturer::MouseEvent;
 
 pub trait MouseInjector {
     fn inject_event(&mut self, event: MouseEvent) -> Result<()>;
@@ -8,15 +8,17 @@ pub trait MouseInjector {
 #[cfg(target_os = "macos")]
 pub mod macos {
     use super::*;
-    use crate::capturer::{MouseEvent, MouseEventType};
-    use core_graphics::event::{CGEvent, CGEventType, CGMouseButton, EventField, CGEventTapLocation};
+    use crate::event::{MouseEvent, MouseEventType};
+    use core_graphics::event::{
+        CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField,
+    };
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
     use core_graphics::geometry::CGPoint;
-    
+
     pub struct MacOSInjector {
         event_source: CGEventSource,
     }
-    
+
     impl MacOSInjector {
         pub fn new() -> Result<Self> {
             let event_source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
@@ -24,68 +26,61 @@ pub mod macos {
             Ok(Self { event_source })
         }
     }
-    
+
     impl MouseInjector for MacOSInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
             let location = CGPoint::new(event.x, event.y);
-            
+
             let cg_event = match event.event_type {
-                MouseEventType::Move => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::MouseMoved,
-                        location,
-                        CGMouseButton::Left,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create mouse move event"))?
-                }
-                MouseEventType::LeftClick => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::LeftMouseDown,
-                        location,
-                        CGMouseButton::Left,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create left click event"))?
-                }
-                MouseEventType::LeftRelease => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::LeftMouseUp,
-                        location,
-                        CGMouseButton::Left,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create left release event"))?
-                }
-                MouseEventType::RightClick => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::RightMouseDown,
-                        location,
-                        CGMouseButton::Right,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create right click event"))?
-                }
-                MouseEventType::RightRelease => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::RightMouseUp,
-                        location,
-                        CGMouseButton::Right,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create right release event"))?
-                }
-                MouseEventType::MiddleClick => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::OtherMouseDown,
-                        location,
-                        CGMouseButton::Center,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create middle click event"))?
-                }
-                MouseEventType::MiddleRelease => {
-                    CGEvent::new_mouse_event(
-                        self.event_source.clone(),
-                        CGEventType::OtherMouseUp,
-                        location,
-                        CGMouseButton::Center,
-                    ).map_err(|_| anyhow::anyhow!("Failed to create middle release event"))?
-                }
+                MouseEventType::Move => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::MouseMoved,
+                    location,
+                    CGMouseButton::Left,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create mouse move event"))?,
+                MouseEventType::LeftClick => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::LeftMouseDown,
+                    location,
+                    CGMouseButton::Left,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create left click event"))?,
+                MouseEventType::LeftRelease => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::LeftMouseUp,
+                    location,
+                    CGMouseButton::Left,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create left release event"))?,
+                MouseEventType::RightClick => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::RightMouseDown,
+                    location,
+                    CGMouseButton::Right,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create right click event"))?,
+                MouseEventType::RightRelease => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::RightMouseUp,
+                    location,
+                    CGMouseButton::Right,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create right release event"))?,
+                MouseEventType::MiddleClick => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::OtherMouseDown,
+                    location,
+                    CGMouseButton::Center,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create middle click event"))?,
+                MouseEventType::MiddleRelease => CGEvent::new_mouse_event(
+                    self.event_source.clone(),
+                    CGEventType::OtherMouseUp,
+                    location,
+                    CGMouseButton::Center,
+                )
+                .map_err(|_| anyhow::anyhow!("Failed to create middle release event"))?,
                 MouseEventType::ScrollUp => {
                     let event = CGEvent::new(self.event_source.clone())
                         .map_err(|_| anyhow::anyhow!("Failed to create scroll event"))?;
@@ -101,7 +96,7 @@ pub mod macos {
                     event
                 }
             };
-            
+
             cg_event.post(CGEventTapLocation::HID);
             Ok(())
         }
@@ -113,9 +108,9 @@ pub mod linux {
     use super::*;
     use crate::capturer::{MouseEvent, MouseEventType};
     use std::process::Command;
-    
+
     pub struct LinuxInjector;
-    
+
     impl LinuxInjector {
         pub fn new() -> Result<Self> {
             // ydotoolデーモンの可用性をチェック
@@ -123,20 +118,26 @@ pub mod linux {
                 .args(["--help"])
                 .output()
                 .map_err(|e| anyhow::anyhow!("ydotool not found or not executable: {}", e))?;
-            
+
             if !output.status.success() {
                 return Err(anyhow::anyhow!("ydotool command failed"));
             }
-            
+
             Ok(Self)
         }
     }
-    
+
     impl MouseInjector for LinuxInjector {
         fn inject_event(&mut self, event: MouseEvent) -> Result<()> {
-            log::info!("Injecting event: {:?} at ({}, {}) with delta ({:?}, {:?})", 
-                      event.event_type, event.x, event.y, event.delta_x, event.delta_y);
-            
+            log::info!(
+                "Injecting event: {:?} at ({}, {}) with delta ({:?}, {:?})",
+                event.event_type,
+                event.x,
+                event.y,
+                event.delta_x,
+                event.delta_y
+            );
+
             match event.event_type {
                 MouseEventType::Move => {
                     // 絶対移動のみ対応
@@ -171,28 +172,27 @@ pub mod linux {
                     self.scroll_wayland(-1)?;
                 }
             }
-            
+
             Ok(())
         }
-        
     }
-    
+
     impl LinuxInjector {
         fn move_cursor_wayland(&self, x: i32, y: i32) -> Result<()> {
             log::debug!("Moving cursor to ({}, {}) with ydotool", x, y);
-            
+
             Command::new("ydotool")
                 .args(["mousemove", "-a", &x.to_string(), &y.to_string()])
                 .output()
                 .map_err(|e| anyhow::anyhow!("Failed to execute ydotool: {}", e))?;
-            
+
             Ok(())
         }
-        
+
         fn click_wayland(&self, button: i32, press: bool) -> Result<()> {
             let action = if press { "press" } else { "release" };
             log::debug!("Mouse {} button {} with ydotool", action, button);
-            
+
             if press {
                 Command::new("ydotool")
                     .args(["click", &button.to_string()])
@@ -200,19 +200,19 @@ pub mod linux {
                     .map_err(|e| anyhow::anyhow!("Failed to execute ydotool: {}", e))?;
             }
             // releaseは通常clickで自動的に処理される
-            
+
             Ok(())
         }
-        
+
         fn scroll_wayland(&self, direction: i32) -> Result<()> {
             log::debug!("Scroll direction {} with ydotool", direction);
-            
+
             let scroll_dir = if direction > 0 { "4" } else { "5" };
             Command::new("ydotool")
                 .args(["click", scroll_dir])
                 .output()
                 .map_err(|e| anyhow::anyhow!("Failed to execute ydotool: {}", e))?;
-            
+
             Ok(())
         }
     }

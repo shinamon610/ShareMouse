@@ -1,58 +1,9 @@
-use crate::capturer::MouseEvent;
 use crate::config::Config;
+use crate::event::MouseEvent;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::mpsc;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkMouseEvent {
-    pub x: f64,
-    pub y: f64,
-    pub delta_x: Option<f64>,
-    pub delta_y: Option<f64>,
-    pub event_type: String,
-}
-
-impl From<MouseEvent> for NetworkMouseEvent {
-    fn from(event: MouseEvent) -> Self {
-        Self {
-            x: event.x,
-            y: event.y,
-            delta_x: event.delta_x,
-            delta_y: event.delta_y,
-            event_type: format!("{:?}", event.event_type),
-        }
-    }
-}
-
-impl From<NetworkMouseEvent> for MouseEvent {
-    fn from(net_event: NetworkMouseEvent) -> Self {
-        use crate::capturer::MouseEventType;
-
-        let event_type = match net_event.event_type.as_str() {
-            "Move" => MouseEventType::Move,
-            "LeftClick" => MouseEventType::LeftClick,
-            "LeftRelease" => MouseEventType::LeftRelease,
-            "RightClick" => MouseEventType::RightClick,
-            "RightRelease" => MouseEventType::RightRelease,
-            "MiddleClick" => MouseEventType::MiddleClick,
-            "MiddleRelease" => MouseEventType::MiddleRelease,
-            "ScrollUp" => MouseEventType::ScrollUp,
-            "ScrollDown" => MouseEventType::ScrollDown,
-            _ => MouseEventType::Move,
-        };
-
-        Self {
-            x: net_event.x,
-            y: net_event.y,
-            delta_x: net_event.delta_x,
-            delta_y: net_event.delta_y,
-            event_type,
-        }
-    }
-}
 
 pub struct NetworkSender {
     config: Config,
@@ -84,8 +35,7 @@ impl NetworkSender {
                 event.x,
                 event.y
             );
-            let net_event = NetworkMouseEvent::from(event);
-            let data = bincode::serialize(&net_event)?;
+            let data = bincode::serialize(&event)?;
             match socket.send_to(&data, remote_addr).await {
                 Ok(bytes_sent) => {
                     log::info!("Sent {} bytes to {}", bytes_sent, remote_addr);
@@ -121,7 +71,7 @@ impl NetworkReceiver {
             let (len, addr) = socket.recv_from(&mut buf).await?;
             log::debug!("Received {} bytes from {}", len, addr);
             log::debug!("Raw bytes: {:?}", &buf[..len]);
-            match bincode::deserialize::<NetworkMouseEvent>(&buf[..len]) {
+            match bincode::deserialize::<MouseEvent>(&buf[..len]) {
                 Ok(net_event) => {
                     log::debug!("Parsed event: {:?}", net_event);
                     let event = MouseEvent::from(net_event);

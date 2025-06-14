@@ -7,9 +7,9 @@ use std::path::PathBuf;
 mod capturer;
 mod config;
 mod coordinate;
+mod event;
 mod injector;
 mod network;
-mod virtual_mouse;
 
 #[derive(Parser)]
 #[command(name = "sharemouse")]
@@ -129,112 +129,4 @@ async fn start_receiver(port: u16) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-struct VirtualMouseProcessor {
-    config: config::Config,
-    virtual_mouse: virtual_mouse::SharedVirtualMouse,
-    transformer: coordinate::CoordinateTransformer,
-}
-
-impl VirtualMouseProcessor {
-    fn new(config: config::Config, virtual_mouse: virtual_mouse::SharedVirtualMouse) -> Self {
-        let transformer = coordinate::CoordinateTransformer::new(config.clone());
-        Self {
-            config,
-            virtual_mouse,
-            transformer,
-        }
-    }
-
-    async fn process_events(
-        &self,
-        mut capture_rx: tokio::sync::mpsc::UnboundedReceiver<capturer::MouseEvent>,
-        network_tx: tokio::sync::mpsc::UnboundedSender<capturer::MouseEvent>,
-    ) {
-        log::info!("VirtualMouseProcessor started, waiting for events...");
-
-        while let Some(physical_event) = capture_rx.recv().await {
-            log::debug!(
-                "Received physical event: ({:.1}, {:.1})",
-                physical_event.x,
-                physical_event.y
-            );
-
-            let mut vm = self.virtual_mouse.lock().unwrap();
-
-            let physical_coord = coordinate::LocalCoordinate::from(physical_event.clone());
-            let delta =
-                if let (Some(dx), Some(dy)) = (physical_event.delta_x, physical_event.delta_y) {
-                    Some((dx, dy))
-                } else {
-                    None
-                };
-
-            // 1. 現在の制御状態に応じて座標更新
-            vm.update_from_physical(physical_coord.clone(), delta, &self.transformer);
-
-            // 2. 制御領域を再判定（座標更新後）
-            let should_control_side = vm.determine_control_side(&self.transformer, &physical_coord);
-            let control_changed = vm.control_side != should_control_side;
-
-            log::debug!(
-                "Control check: current={:?}, should={:?}, changed={}",
-                vm.control_side,
-                should_control_side,
-                control_changed
-            );
-
-            if control_changed {
-                log::info!(
-                    "Control changing from {:?} to {:?} at virtual ({}, {})",
-                    vm.control_side,
-                    should_control_side,
-                    vm.virtual_position.x,
-                    vm.virtual_position.y
-                );
-                vm.switch_control(should_control_side, &physical_coord);
-
-                // 制御権移譲時：相手側に初期位置を送信
-                if let Some(transfer_event) = vm.create_transfer_event(&self.transformer) {
-                    log::info!(
-                        "Control transfer: sending initial position ({}, {}) to remote",
-                        transfer_event.x,
-                        transfer_event.y
-                    );
-                    let _ = network_tx.send(transfer_event);
-                }
-            }
-
-            // 3. Remote制御時のみネットワーク送信
-            if let virtual_mouse::ControlSide::Remote = vm.control_side {
-                if let Some(remote_coord) = vm.get_remote_coordinate(&self.transformer) {
-                    let network_event = capturer::MouseEvent {
-                        x: remote_coord.x,
-                        y: remote_coord.y,
-                        delta_x: physical_event.delta_x,
-                        delta_y: physical_event.delta_y,
-                        event_type: physical_event.event_type.clone(),
-                    };
-                    log::info!(
-                        "Sending to remote: ({}, {}) [virtual: ({}, {})]",
-                        network_event.x,
-                        network_event.y,
-                        vm.virtual_position.x,
-                        vm.virtual_position.y
-                    );
-                    let _ = network_tx.send(network_event);
-                }
-            }
-
-            log::debug!(
-                "Virtual position: ({}, {}), Control: {:?}",
-                vm.virtual_position.x,
-                vm.virtual_position.y,
-                vm.control_side
-            );
-        }
-
-        log::warn!("VirtualMouseProcessor stopped receiving events");
-    }
 }
