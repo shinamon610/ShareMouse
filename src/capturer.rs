@@ -9,7 +9,6 @@ pub trait MouseCapturer {
         sender: mpsc::UnboundedSender<MouseEvent>,
         virtual_model: crate::virtual_model::SharedVirtualModel,
     ) -> Result<()>;
-    fn stop_capture(&self) -> Result<()>;
 }
 
 #[cfg(target_os = "macos")]
@@ -85,7 +84,7 @@ pub mod macos {
 
             let mut last_position = get_mouse_location();
             log::info!(
-                "Mouse capture with VirtualModel started at position ({}, {})",
+                "Mouse capture at position ({}, {})",
                 last_position.x,
                 last_position.y
             );
@@ -120,12 +119,7 @@ pub mod macos {
                 tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
             }
 
-            log::info!("Mouse capture with VirtualModel stopped");
-            Ok(())
-        }
-
-        fn stop_capture(&self) -> Result<()> {
-            self.is_running.store(false, Ordering::SeqCst);
+            log::info!("Mouse capture stopped");
             Ok(())
         }
     }
