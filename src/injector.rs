@@ -132,11 +132,8 @@ pub mod linux {
             
             match event.event_type {
                 MouseEventType::Move => {
-                    // 移動量がある場合は相対移動、有効座標の場合のみ絶対移動
-                    if let (Some(dx), Some(dy)) = (event.delta_x, event.delta_y) {
-                        self.move_cursor_relative_wayland(dx as i32, dy as i32)?;
-                    } else if event.x >= 0.0 && event.y >= 0.0 {
-                        // 有効座標のみ絶対移動（負の値は無効座標として無視）
+                    // 絶対移動のみ対応
+                    if event.x >= 0.0 && event.y >= 0.0 {
                         self.move_cursor_wayland(event.x as i32, event.y as i32)?;
                     } else {
                         log::debug!("Ignoring invalid coordinates ({}, {})", event.x, event.y);
@@ -175,119 +172,40 @@ pub mod linux {
     
     impl LinuxInjector {
         fn move_cursor_wayland(&self, x: i32, y: i32) -> Result<()> {
-            log::debug!("Moving Wayland cursor to ({}, {})", x, y);
+            log::debug!("Moving cursor to ({}, {}) with ydotool", x, y);
             
-            // Try different approaches for Wayland cursor movement
+            Command::new("ydotool")
+                .args(["mousemove", "-a", &x.to_string(), &y.to_string()])
+                .output()
+                .map_err(|e| anyhow::anyhow!("Failed to execute ydotool: {}", e))?;
             
-            // Approach 1: Try wlrctl if available
-            if let Ok(_) = Command::new("wlrctl")
-                .args(["pointer", "move", &x.to_string(), &y.to_string()])
-                .output() {
-                return Ok(());
-            }
-            
-            // Approach 2: Try wl-pointer-warp if available  
-            if let Ok(_) = Command::new("wl-pointer-warp")
-                .args([&x.to_string(), &y.to_string()])
-                .output() {
-                return Ok(());
-            }
-            
-            // Approach 3: Try hyprctl for Hyprland
-            if let Ok(_) = Command::new("hyprctl")
-                .args(["dispatch", "movecursor", &format!("{} {}", x, y)])
-                .output() {
-                return Ok(());
-            }
-            
-            log::warn!("No suitable Wayland cursor tool found");
-            Ok(())
-        }
-        
-        fn move_cursor_relative_wayland(&self, dx: i32, dy: i32) -> Result<()> {
-            log::info!("Attempting Wayland relative cursor movement by ({}, {})", dx, dy);
-            
-            // Approach 1: Try wlrctl relative movement
-            log::info!("Trying wlrctl pointer move-relative {} {}", dx, dy);
-            match Command::new("wlrctl")
-                .args(["pointer", "move-relative", &dx.to_string(), &dy.to_string()])
-                .output() {
-                Ok(output) => {
-                    log::info!("wlrctl exit status: {}, stdout: {}, stderr: {}", 
-                              output.status, 
-                              String::from_utf8_lossy(&output.stdout),
-                              String::from_utf8_lossy(&output.stderr));
-                    if output.status.success() {
-                        return Ok(());
-                    }
-                }
-                Err(e) => log::info!("wlrctl command failed: {}", e),
-            }
-            
-            // Approach 2: Try hyprctl relative movement for Hyprland
-            log::info!("Trying hyprctl dispatch movecursor {} {}", dx, dy);
-            match Command::new("hyprctl")
-                .args(["dispatch", "movecursor", &dx.to_string(), &dy.to_string()])
-                .output() {
-                Ok(output) => {
-                    log::info!("hyprctl exit status: {}, stdout: {}, stderr: {}", 
-                              output.status, 
-                              String::from_utf8_lossy(&output.stdout),
-                              String::from_utf8_lossy(&output.stderr));
-                    if output.status.success() {
-                        return Ok(());
-                    }
-                }
-                Err(e) => log::info!("hyprctl command failed: {}", e),
-            }
-            
-            // Fallback: Try ydotool for relative movement
-            log::info!("Trying ydotool mousemove -- {} {}", dx, dy);
-            match Command::new("ydotool")
-                .args(["mousemove", "--", &dx.to_string(), &dy.to_string()])
-                .output() {
-                Ok(output) => {
-                    log::info!("ydotool exit status: {}, stdout: {}, stderr: {}", 
-                              output.status, 
-                              String::from_utf8_lossy(&output.stdout),
-                              String::from_utf8_lossy(&output.stderr));
-                    if output.status.success() {
-                        return Ok(());
-                    }
-                }
-                Err(e) => log::info!("ydotool command failed: {}", e),
-            }
-            
-            log::warn!("No suitable Wayland relative cursor movement tool found");
             Ok(())
         }
         
         fn click_wayland(&self, button: i32, press: bool) -> Result<()> {
             let action = if press { "press" } else { "release" };
-            log::debug!("Wayland mouse {} button {}", action, button);
+            log::debug!("Mouse {} button {} with ydotool", action, button);
             
-            // Try wlrctl
-            if let Ok(_) = Command::new("wlrctl")
-                .args(["pointer", "click", &button.to_string()])
-                .output() {
-                return Ok(());
+            if press {
+                Command::new("ydotool")
+                    .args(["click", &button.to_string()])
+                    .output()
+                    .map_err(|e| anyhow::anyhow!("Failed to execute ydotool: {}", e))?;
             }
+            // releaseは通常clickで自動的に処理される
             
-            log::warn!("No suitable Wayland click tool found");
             Ok(())
         }
         
         fn scroll_wayland(&self, direction: i32) -> Result<()> {
-            log::debug!("Wayland scroll direction {}", direction);
+            log::debug!("Scroll direction {} with ydotool", direction);
             
-            // Try wlrctl
-            if let Ok(_) = Command::new("wlrctl")
-                .args(["pointer", "scroll", &direction.to_string()])
-                .output() {
-                return Ok(());
-            }
+            let scroll_dir = if direction > 0 { "4" } else { "5" };
+            Command::new("ydotool")
+                .args(["click", scroll_dir])
+                .output()
+                .map_err(|e| anyhow::anyhow!("Failed to execute ydotool: {}", e))?;
             
-            log::warn!("No suitable Wayland scroll tool found");
             Ok(())
         }
     }
